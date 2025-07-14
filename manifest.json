@@ -1,16 +1,21 @@
 {
   "manifest_version": 3,
   "name": "Currency Translator",
-  "version": "1.0",
-  "description": "Detects prices and converts them to your preferred currency.",
+  "version": "1.1.0",
+  "description": "Automatically detects prices and converts them to your preferred currency, with translation support for Japanese text.",
   "permissions": ["storage", "scripting", "activeTab"],
+  "host_permissions": [
+    "https://api.exchangerate.host/*",
+    "https://libretranslate.de/*"
+  ],
   "action": {
     "default_icon": {
       "16": "icon_16x16.png",
       "48": "icon_48x48.png",
       "128": "icon_128x128.png"
     },
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_title": "Currency Translator"
   },
   "content_scripts": [
     {
@@ -19,9 +24,18 @@
       "run_at": "document_idle"
     }
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "icons": {
     "16": "icon_16x16.png",
     "48": "icon_48x48.png",
     "128": "icon_128x128.png"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["icon_16x16.png"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
