@@ -6,139 +6,142 @@
       body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
           sans-serif;
-        padding: 16px;
-        width: 280px;
+        padding: 0;
         margin: 0;
-        background-color: #f8f9fa;
+        width: 320px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #333;
+      }
+
+      .header {
+        background: rgba(255, 255, 255, 0.95);
+        padding: 20px;
+        text-align: center;
+        backdrop-filter: blur(10px);
+      }
+
+      .header h1 {
+        margin: 0;
+        font-size: 18px;
+        color: #333;
+        font-weight: 600;
+      }
+
+      .header .subtitle {
+        font-size: 12px;
+        color: #666;
+        margin-top: 4px;
       }
 
       .container {
         background: white;
-        padding: 16px;
-        border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-      }
-
-      h1 {
-        margin: 0 0 16px 0;
-        font-size: 18px;
-        color: #333;
-        text-align: center;
+        padding: 20px;
+        border-radius: 0;
       }
 
       .form-group {
-        margin-bottom: 16px;
+        margin-bottom: 18px;
       }
 
       label {
         display: block;
-        margin-bottom: 4px;
+        margin-bottom: 6px;
         font-weight: 500;
         color: #555;
         font-size: 14px;
       }
 
       select,
-      input,
-      button {
+      input {
         width: 100%;
-        padding: 8px 12px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
+        padding: 10px 12px;
+        border: 2px solid #e1e5e9;
+        border-radius: 6px;
         font-size: 14px;
         box-sizing: border-box;
+        transition: border-color 0.2s ease;
       }
 
       select:focus,
-      input:focus,
-      button:focus {
+      input:focus {
         outline: none;
-        border-color: #4285f4;
-        box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
       }
 
       button {
-        background-color: #4285f4;
-        color: white;
+        width: 100%;
+        padding: 12px;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
         font-weight: 500;
         cursor: pointer;
-        transition: background-color 0.2s;
+        transition: all 0.2s ease;
+        margin-bottom: 8px;
       }
 
-      button:hover:not(:disabled) {
-        background-color: #3367d6;
+      .primary-button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
       }
 
-      button:disabled {
-        background-color: #ccc;
-        cursor: not-allowed;
-      }
-
-      .button-group {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
+      .primary-button:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
       }
 
       .secondary-button {
-        background-color: #f1f3f4;
-        color: #333;
+        background: #f8f9fa;
+        color: #555;
+        border: 1px solid #e9ecef;
       }
 
       .secondary-button:hover:not(:disabled) {
-        background-color: #e8eaed;
+        background: #e9ecef;
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none !important;
+      }
+
+      .button-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 16px;
       }
 
       .checkbox-group {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
+        padding: 12px;
+        background: #f8f9fa;
+        border-radius: 6px;
+        margin-bottom: 8px;
       }
 
       .checkbox-group input[type="checkbox"] {
-        width: auto;
+        width: 18px;
+        height: 18px;
         margin: 0;
+        accent-color: #667eea;
       }
 
       .checkbox-group label {
         margin: 0;
         font-weight: normal;
         cursor: pointer;
-      }
-
-      #statusMessage {
-        min-height: 20px;
-        font-weight: 500;
-        margin-top: 12px;
-        padding: 8px;
-        border-radius: 4px;
-        font-size: 13px;
-        text-align: center;
-        transition: all 0.2s;
-      }
-
-      #statusMessage.success {
-        background-color: #e8f5e8;
-        color: #2e7d32;
-        border: 1px solid #c8e6c9;
-      }
-
-      #statusMessage.error {
-        background-color: #ffeaea;
-        color: #c62828;
-        border: 1px solid #ffcdd2;
-      }
-
-      #statusMessage.processing {
-        background-color: #e3f2fd;
-        color: #1976d2;
-        border: 1px solid #bbdefb;
+        flex: 1;
       }
 
       .input-group {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
       }
 
       .input-group input {
@@ -148,38 +151,132 @@
       .input-group span {
         font-size: 13px;
         color: #666;
+        font-weight: 500;
+      }
+
+      #statusMessage {
+        min-height: 20px;
+        padding: 10px;
+        border-radius: 6px;
+        font-size: 13px;
+        text-align: center;
+        margin-top: 16px;
+        transition: all 0.3s ease;
+        font-weight: 500;
+      }
+
+      #statusMessage.success {
+        background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
+        color: white;
+        box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
+      }
+
+      #statusMessage.error {
+        background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
+        color: white;
+        box-shadow: 0 2px 8px rgba(244, 67, 54, 0.3);
+      }
+
+      #statusMessage.processing {
+        background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
+        color: white;
+        box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
       }
 
       .divider {
         height: 1px;
-        background-color: #e0e0e0;
-        margin: 16px 0;
+        background: linear-gradient(90deg, transparent, #e0e0e0, transparent);
+        margin: 20px 0;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+
+      .stat-box {
+        background: #f8f9fa;
+        padding: 12px;
+        border-radius: 6px;
+        text-align: center;
+        border: 1px solid #e9ecef;
+      }
+
+      .stat-number {
+        font-size: 18px;
+        font-weight: 600;
+        color: #667eea;
+      }
+
+      .stat-label {
+        font-size: 11px;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
       }
 
       .version {
         font-size: 11px;
         color: #999;
         text-align: center;
-        margin-top: 8px;
+        margin-top: 12px;
+      }
+
+      .loading {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border: 2px solid #f3f3f3;
+        border-top: 2px solid #667eea;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-right: 8px;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      .feature-list {
+        font-size: 12px;
+        color: #666;
+        margin-top: 12px;
+        padding-left: 16px;
+      }
+
+      .feature-list li {
+        margin-bottom: 4px;
       }
     </style>
   </head>
   <body>
-    <div class="container">
-      <h1>Currency Translator</h1>
+    <div class="header">
+      <h1>🌐 Currency Translator</h1>
+      <div class="subtitle">Auto-convert prices & translate text</div>
+    </div>
 
+    <div class="container">
       <div class="form-group">
-        <label for="currency">Preferred Currency:</label>
+        <label for="currency">💰 Preferred Currency:</label>
         <select id="currency">
-          <option value="EUR">EUR (€)</option>
-          <option value="USD">USD ($)</option>
-          <option value="GBP">GBP (£)</option>
-          <option value="JPY">JPY (¥)</option>
+          <option value="EUR">EUR (€) - Euro</option>
+          <option value="USD">USD ($) - US Dollar</option>
+          <option value="GBP">GBP (£) - British Pound</option>
+          <option value="JPY">JPY (¥) - Japanese Yen</option>
+          <option value="CNY">CNY (¥) - Chinese Yuan</option>
+          <option value="KRW">KRW (₩) - Korean Won</option>
         </select>
       </div>
 
       <div class="form-group">
-        <label for="language">Translation Language:</label>
+        <label for="language">🗣️ Translation Language:</label>
         <select id="language">
           <option value="en">English</option>
           <option value="es">Spanish</option>
@@ -188,34 +285,82 @@
           <option value="ja">Japanese</option>
           <option value="ko">Korean</option>
           <option value="zh">Chinese</option>
+          <option value="ar">Arabic</option>
+          <option value="ru">Russian</option>
         </select>
       </div>
 
       <div class="form-group">
-        <label for="msgTimeout">Message display time:</label>
+        <label for="msgTimeout">⏱️ Message display time:</label>
         <div class="input-group">
           <input id="msgTimeout" type="number" min="1" max="10" value="3" />
           <span>seconds</span>
         </div>
       </div>
 
+      <div class="divider"></div>
+
       <div class="form-group">
-        <div class="checkbox-group">
-          <input id="autoProcess" type="checkbox" checked />
-          <label for="autoProcess">Auto-process new content</label>
-        </div>
+        <label for="refreshInterval">🔄 Auto-refresh interval:</label>
+        <select id="refreshInterval">
+          <option value="300000">5 minutes</option>
+          <option value="600000">10 minutes</option>
+          <option value="1800000">30 minutes</option>
+          <option value="3600000">1 hour</option>
+        </select>
+      </div>
+
+      <div class="checkbox-group">
+        <input id="showOriginal" type="checkbox" checked />
+        <label for="showOriginal">📝 Show original text</label>
+      </div>
+
+      <div class="checkbox-group">
+        <input id="compactMode" type="checkbox" />
+        <label for="compactMode">📱 Compact display mode</label>
+      </div>
+
+      <div class="checkbox-group">
+        <input id="autoProcess" type="checkbox" checked />
+        <label for="autoProcess">🔄 Auto-process new content</label>
+      </div>
+
+      <div class="checkbox-group">
+        <input id="showStats" type="checkbox" />
+        <label for="showStats">📊 Show processing stats</label>
       </div>
 
       <div class="divider"></div>
 
-      <div class="button-group">
-        <button id="reprocess">Reprocess Page</button>
-        <button id="clearCache" class="secondary-button">Clear Cache</button>
+      <div class="stats" id="statsSection" style="display: none">
+        <div class="stat-box">
+          <div class="stat-number" id="conversionsCount">0</div>
+          <div class="stat-label">Conversions</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-number" id="translationsCount">0</div>
+          <div class="stat-label">Translations</div>
+        </div>
+      </div>
+
+      <div class="button-grid">
+        <button id="reprocess" class="primary-button">
+          <span id="reprocessText">🔄 Reprocess</span>
+        </button>
+        <button id="clearCache" class="secondary-button">🗑️ Clear Cache</button>
       </div>
 
       <div id="statusMessage"></div>
 
-      <div class="version">v1.0</div>
+      <div class="version">v1.2.0 - Enhanced Edition</div>
+
+      <ul class="feature-list">
+        <li>✅ Multi-currency support (6 currencies)</li>
+        <li>✅ Multi-language translation (9 languages)</li>
+        <li>✅ Fallback APIs for reliability</li>
+        <li>✅ Smart caching system</li>
+        <li>✅ Auto-detection of new content</li>
+      </ul>
     </div>
 
     <script src="popup.js"></script>

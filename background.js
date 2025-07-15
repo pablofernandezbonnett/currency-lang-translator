@@ -17,6 +17,7 @@ chrome.runtime.onUpdateAvailable.addListener(() => {
 });
 
 // Limpiar cache periódicamente
+// Añadir después del listener de alarmas existente alrededor de la línea 20
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "clearCache") {
     // Notificar a todos los tabs activos para limpiar cache
@@ -27,11 +28,20 @@ chrome.alarms.onAlarm.addListener((alarm) => {
         });
       });
     });
+  } else if (alarm.name === "deepCleanup") {
+    // Limpieza profunda cada hora
+    chrome.tabs.query({}, (tabs) => {
+      tabs.forEach((tab) => {
+        chrome.tabs
+          .sendMessage(tab.id, { action: "deepCleanup" })
+          .catch(() => {});
+      });
+    });
   }
 });
 
-// Crear alarma para limpiar cache cada hora
-chrome.alarms.create("clearCache", { periodInMinutes: 60 });
+// Crear alarma adicional para limpieza profunda
+chrome.alarms.create("deepCleanup", { periodInMinutes: 60 });
 
 // Manejar mensajes del content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -61,5 +71,65 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     } else {
       chrome.action.disable(tabId);
     }
+  }
+});
+
+// proper cleanup in background.js:
+chrome.runtime.onSuspend.addListener(() => {
+  // Clear any pending alarms
+  chrome.alarms.clearAll();
+
+  // Clean up any remaining timeouts
+  chrome.tabs.query({}, (tabs) => {
+    tabs.forEach((tab) => {
+      chrome.tabs.sendMessage(tab.id, { action: "cleanup" }).catch(() => {});
+    });
+  });
+});
+
+// Add missing alarm creation
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === "install") {
+    chrome.storage.sync.set({
+      currency: "EUR",
+      language: "en",
+      msgTimeout: 3,
+      autoProcess: true,
+    });
+
+    // Create cache cleanup alarms
+    chrome.alarms.create("clearCache", { periodInMinutes: 15 });
+    chrome.alarms.create("deepCleanup", { periodInMinutes: 60 });
+  }
+});
+
+// Fix alarm listener
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === "clearCache") {
+    chrome.tabs.query({}, (tabs) => {
+      tabs.forEach((tab) => {
+        if (
+          tab.url &&
+          (tab.url.startsWith("http://") || tab.url.startsWith("https://"))
+        ) {
+          chrome.tabs
+            .sendMessage(tab.id, { action: "clearCache" })
+            .catch(() => {});
+        }
+      });
+    });
+  } else if (alarm.name === "deepCleanup") {
+    chrome.tabs.query({}, (tabs) => {
+      tabs.forEach((tab) => {
+        if (
+          tab.url &&
+          (tab.url.startsWith("http://") || tab.url.startsWith("https://"))
+        ) {
+          chrome.tabs
+            .sendMessage(tab.id, { action: "deepCleanup" })
+            .catch(() => {});
+        }
+      });
+    });
   }
 });

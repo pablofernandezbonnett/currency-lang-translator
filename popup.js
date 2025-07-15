@@ -1,30 +1,115 @@
+// Elementos del DOM
 const currencySelect = document.getElementById("currency");
 const languageSelect = document.getElementById("language");
 const reprocessButton = document.getElementById("reprocess");
+const clearCacheButton = document.getElementById("clearCache");
 const statusMessage = document.getElementById("statusMessage");
 const msgTimeoutInput = document.getElementById("msgTimeout");
-
-// Elementos adicionales
-const clearCacheButton = document.getElementById("clearCache");
 const autoProcessCheckbox = document.getElementById("autoProcess");
+const showStatsCheckbox = document.getElementById("showStats");
+const statsSection = document.getElementById("statsSection");
+const conversionsCount = document.getElementById("conversionsCount");
+const translationsCount = document.getElementById("translationsCount");
+const reprocessText = document.getElementById("reprocessText");
 
 let statusTimeout = null;
+let stats = { conversions: 0, translations: 0 };
 
-// Cargar configuraciones guardadas
+// Enhanced storage operation with retry logic
+async function safeStorageOperation(operation, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await operation();
+    } catch (error) {
+      console.error(`Storage operation failed (attempt ${i + 1}):`, error);
+      if (i === retries - 1) {
+        showStatus("Storage error occurred", "error");
+        return null;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100 * (i + 1)));
+    }
+  }
+}
+
+// Enhanced settings validation
+function validateSettings(settings) {
+  const defaults = {
+    currency: "EUR",
+    language: "en",
+    msgTimeout: 3,
+    autoProcess: true,
+    showStats: false,
+  };
+
+  const allowedCurrencies = ["EUR", "USD", "GBP", "JPY", "CNY", "KRW"];
+  const allowedLanguages = [
+    "en",
+    "es",
+    "fr",
+    "de",
+    "ja",
+    "ko",
+    "zh",
+    "ar",
+    "ru",
+  ];
+
+  return {
+    currency: allowedCurrencies.includes(settings.currency)
+      ? settings.currency
+      : defaults.currency,
+    language: allowedLanguages.includes(settings.language)
+      ? settings.language
+      : defaults.language,
+    msgTimeout: Math.max(
+      1,
+      Math.min(10, parseInt(settings.msgTimeout) || defaults.msgTimeout)
+    ),
+    autoProcess:
+      typeof settings.autoProcess === "boolean"
+        ? settings.autoProcess
+        : defaults.autoProcess,
+    showStats:
+      typeof settings.showStats === "boolean"
+        ? settings.showStats
+        : defaults.showStats,
+  };
+}
+
+// Cargar configuraciones y estadísticas
+// Enhanced loadSettings function
 async function loadSettings() {
   try {
-    const settings = await chrome.storage.sync.get([
-      "currency",
-      "language",
-      "msgTimeout",
-      "autoProcess",
-    ]);
+    const settings = await safeStorageOperation(() =>
+      chrome.storage.sync.get([
+        "currency",
+        "language",
+        "msgTimeout",
+        "autoProcess",
+        "showStats",
+        "stats",
+      ])
+    );
 
-    if (settings.currency) currencySelect.value = settings.currency;
-    if (settings.language) languageSelect.value = settings.language;
-    msgTimeoutInput.value = settings.msgTimeout ?? 3;
-    if (autoProcessCheckbox)
-      autoProcessCheckbox.checked = settings.autoProcess ?? true;
+    if (!settings) return;
+
+    const validatedSettings = validateSettings(settings);
+
+    currencySelect.value = validatedSettings.currency;
+    languageSelect.value = validatedSettings.language;
+    msgTimeoutInput.value = validatedSettings.msgTimeout;
+    autoProcessCheckbox.checked = validatedSettings.autoProcess;
+    showStatsCheckbox.checked = validatedSettings.showStats;
+
+    if (settings.stats && typeof settings.stats === "object") {
+      stats = {
+        conversions: parseInt(settings.stats.conversions) || 0,
+        translations: parseInt(settings.stats.translations) || 0,
+      };
+      updateStatsDisplay();
+    }
+
+    toggleStatsSection();
   } catch (error) {
     console.error("Error loading settings:", error);
     showStatus("Error loading settings", "error");
@@ -35,9 +120,31 @@ async function loadSettings() {
 async function saveSetting(key, value) {
   try {
     await chrome.storage.sync.set({ [key]: value });
+
+    // Guardar estadísticas si se actualizaron
+    if (key === "stats") {
+      await chrome.storage.sync.set({ stats: value });
+    }
   } catch (error) {
     console.error("Error saving setting:", error);
     showStatus("Error saving setting", "error");
+  }
+}
+
+// Actualizar display de estadísticas
+function updateStatsDisplay() {
+  if (conversionsCount) {
+    conversionsCount.textContent = stats.conversions || 0;
+  }
+  if (translationsCount) {
+    translationsCount.textContent = stats.translations || 0;
+  }
+}
+
+// Mostrar/ocultar sección de estadísticas
+function toggleStatsSection() {
+  if (statsSection && showStatsCheckbox) {
+    statsSection.style.display = showStatsCheckbox.checked ? "grid" : "none";
   }
 }
 
@@ -49,6 +156,11 @@ function showStatus(msg, type = "success") {
 
   statusMessage.textContent = msg;
   statusMessage.className = type;
+
+  // Añadir icono de loading para procesamiento
+  if (type === "processing") {
+    statusMessage.innerHTML = '<span class="loading"></span>' + msg;
+  }
 
   chrome.storage.sync.get(["msgTimeout"], ({ msgTimeout }) => {
     const timeout = (msgTimeout ?? 3) * 1000;
@@ -67,6 +179,14 @@ function validateTimeout(value) {
   return val;
 }
 
+// Resetear estadísticas
+async function resetStats() {
+  stats = { conversions: 0, translations: 0 };
+  await saveSetting("stats", stats);
+  updateStatsDisplay();
+  showStatus("Statistics reset");
+}
+
 // Event listeners
 currencySelect.addEventListener("change", () => {
   saveSetting("currency", currencySelect.value);
@@ -82,6 +202,12 @@ msgTimeoutInput.addEventListener("change", () => {
   const val = validateTimeout(msgTimeoutInput.value);
   msgTimeoutInput.value = val;
   saveSetting("msgTimeout", val);
+  showStatus("Message timeout updated");
+});
+
+msgTimeoutInput.addEventListener("blur", () => {
+  const val = validateTimeout(msgTimeoutInput.value);
+  msgTimeoutInput.value = val;
 });
 
 if (autoProcessCheckbox) {
@@ -93,8 +219,22 @@ if (autoProcessCheckbox) {
   });
 }
 
+if (showStatsCheckbox) {
+  showStatsCheckbox.addEventListener("change", () => {
+    saveSetting("showStats", showStatsCheckbox.checked);
+    toggleStatsSection();
+    showStatus(
+      "Statistics " + (showStatsCheckbox.checked ? "shown" : "hidden")
+    );
+  });
+}
+
 // Reprocesar página activa
 reprocessButton.addEventListener("click", async () => {
+  if (reprocessText) {
+    reprocessText.innerHTML = '<span class="loading"></span>Processing...';
+  }
+
   showStatus("Processing...", "processing");
   reprocessButton.disabled = true;
 
@@ -102,6 +242,17 @@ reprocessButton.addEventListener("click", async () => {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
 
     if (tabs[0]?.id) {
+      // Verificar si la página es procesable
+      const url = tabs[0].url;
+      if (
+        url.startsWith("chrome://") ||
+        url.startsWith("about:") ||
+        url.startsWith("moz-extension://")
+      ) {
+        showStatus("Cannot process this page", "error");
+        return;
+      }
+
       await chrome.tabs.sendMessage(tabs[0].id, { action: "reprocess" });
     } else {
       showStatus("No active tab found", "error");
@@ -111,12 +262,17 @@ reprocessButton.addEventListener("click", async () => {
     showStatus("Error: " + error.message, "error");
   } finally {
     reprocessButton.disabled = false;
+    if (reprocessText) {
+      reprocessText.innerHTML = "🔄 Reprocess";
+    }
   }
 });
 
 // Limpiar cache
 if (clearCacheButton) {
   clearCacheButton.addEventListener("click", async () => {
+    clearCacheButton.disabled = true;
+
     try {
       const tabs = await chrome.tabs.query({
         active: true,
@@ -126,10 +282,23 @@ if (clearCacheButton) {
       if (tabs[0]?.id) {
         await chrome.tabs.sendMessage(tabs[0].id, { action: "clearCache" });
         showStatus("Cache cleared");
+      } else {
+        showStatus("No active tab found", "error");
       }
     } catch (error) {
       console.error("Error clearing cache:", error);
       showStatus("Error clearing cache", "error");
+    } finally {
+      clearCacheButton.disabled = false;
+    }
+  });
+}
+
+// Doble click en estadísticas para resetear
+if (statsSection) {
+  statsSection.addEventListener("dblclick", () => {
+    if (confirm("Reset all statistics?")) {
+      resetStats();
     }
   });
 }
@@ -138,16 +307,54 @@ if (clearCacheButton) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   switch (request.action) {
     case "done":
-      showStatus("Done!", "success");
+      showStatus("Processing complete!", "success");
+      reprocessButton.disabled = false;
+      if (reprocessText) {
+        reprocessText.innerHTML = "🔄 Reprocess";
+      }
       break;
+
     case "error":
       showStatus("Error: " + (request.error || "Unknown error"), "error");
+      reprocessButton.disabled = false;
+      if (reprocessText) {
+        reprocessText.innerHTML = "🔄 Reprocess";
+      }
       break;
+
     case "progress":
       showStatus("Processing: " + request.message, "processing");
       break;
+
+    case "updateStats":
+      if (request.stats) {
+        stats = request.stats;
+        saveSetting("stats", stats);
+        updateStatsDisplay();
+      }
+      break;
   }
 });
+
+// Verificar disponibilidad de APIs
+async function checkAPIStatus() {
+  try {
+    // Verificar una API de ejemplo
+    const response = await fetch(
+      "https://api.exchangerate.host/latest?base=USD&symbols=EUR",
+      {
+        method: "GET",
+        signal: AbortSignal.timeout(5000),
+      }
+    );
+
+    if (response.ok) {
+      console.log("API services are available");
+    }
+  } catch (error) {
+    console.warn("API check failed:", error);
+  }
+}
 
 // Manejar errores no capturados
 window.addEventListener("error", (event) => {
@@ -155,5 +362,55 @@ window.addEventListener("error", (event) => {
   showStatus("Unexpected error", "error");
 });
 
+// Manejar promesas rechazadas
+window.addEventListener("unhandledrejection", (event) => {
+  console.error("Unhandled promise rejection:", event.reason);
+  showStatus("Service error", "error");
+});
+
+// Verificar si hay tabs activos al abrir popup
+chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+  if (tabs.length === 0) {
+    reprocessButton.disabled = true;
+    clearCacheButton.disabled = true;
+    showStatus("No active tab", "error");
+  } else {
+    const url = tabs[0].url;
+    if (
+      url.startsWith("chrome://") ||
+      url.startsWith("about:") ||
+      url.startsWith("moz-extension://")
+    ) {
+      reprocessButton.disabled = true;
+      clearCacheButton.disabled = true;
+      showStatus("Page not supported", "error");
+    }
+  }
+});
+
 // Inicializar
-loadSettings();
+document.addEventListener("DOMContentLoaded", () => {
+  loadSettings();
+  checkAPIStatus();
+
+  // Añadir tooltips
+  if (reprocessButton) {
+    reprocessButton.title = "Reprocess current page content";
+  }
+  if (clearCacheButton) {
+    clearCacheButton.title = "Clear translation and currency cache";
+  }
+  if (autoProcessCheckbox) {
+    autoProcessCheckbox.title = "Automatically process new content as it loads";
+  }
+  if (showStatsCheckbox) {
+    showStatsCheckbox.title = "Show conversion and translation statistics";
+  }
+});
+
+// Ejecutar inmediatamente si el DOM ya está listo
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", loadSettings);
+} else {
+  loadSettings();
+}

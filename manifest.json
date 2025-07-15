@@ -1,12 +1,16 @@
 {
   "manifest_version": 3,
-  "name": "Currency Translator",
-  "version": "1.1.0",
-  "description": "Automatically detects prices and converts them to your preferred currency, with translation support for Japanese text.",
-  "permissions": ["storage", "scripting", "activeTab"],
+  "name": "Currency Translator Pro",
+  "version": "1.3.0",
+  "description": "Automatically converts currencies and translates text across 15+ languages with multiple fallback APIs for maximum reliability.",
+  "permissions": ["storage", "scripting", "activeTab", "alarms"],
   "host_permissions": [
     "https://api.exchangerate.host/*",
-    "https://libretranslate.de/*"
+    "https://api.exchangerate-api.com/*",
+    "https://cdn.jsdelivr.net/*",
+    "https://libretranslate.de/*",
+    "https://api.mymemory.translated.net/*",
+    "https://translate.googleapis.com/*"
   ],
   "action": {
     "default_icon": {
@@ -15,7 +19,7 @@
       "128": "icon_128x128.png"
     },
     "default_popup": "popup.html",
-    "default_title": "Currency Translator"
+    "default_title": "Currency Translator Pro"
   },
   "content_scripts": [
     {
