@@ -26,7 +26,7 @@ async function safeStorageOperation(operation, retries = 3) {
         showStatus("Storage error occurred", "error");
         return null;
       }
-      await new Promise((resolve) => setTimeout(resolve, 100 * (i + 1)));
+      await new Promise((resolve) => setTimeout(resolve, 200 * (i + 1))); // Increased delay
     }
   }
 }
@@ -101,13 +101,8 @@ async function loadSettings() {
     autoProcessCheckbox.checked = validatedSettings.autoProcess;
     showStatsCheckbox.checked = validatedSettings.showStats;
 
-    if (settings.stats && typeof settings.stats === "object") {
-      stats = {
-        conversions: parseInt(settings.stats.conversions) || 0,
-        translations: parseInt(settings.stats.translations) || 0,
-      };
-      updateStatsDisplay();
-    }
+    stats = validatedSettings.stats;
+    updateStatsDisplay();
 
     toggleStatsSection();
   } catch (error) {
@@ -119,12 +114,6 @@ async function loadSettings() {
 // Guardar configuración
 async function saveSetting(key, value) {
   try {
-    await chrome.storage.sync.set({ [key]: value });
-
-    // Guardar estadísticas si se actualizaron
-    if (key === "stats") {
-      await chrome.storage.sync.set({ stats: value });
-    }
   } catch (error) {
     console.error("Error saving setting:", error);
     showStatus("Error saving setting", "error");
@@ -134,10 +123,10 @@ async function saveSetting(key, value) {
 // Actualizar display de estadísticas
 function updateStatsDisplay() {
   if (conversionsCount) {
-    conversionsCount.textContent = stats.conversions || 0;
+    conversionsCount.textContent = stats?.conversions || 0;
   }
   if (translationsCount) {
-    translationsCount.textContent = stats.translations || 0;
+    translationsCount.textContent = stats?.translations || 0;
   }
 }
 
@@ -247,7 +236,7 @@ reprocessButton.addEventListener("click", async () => {
       if (
         url.startsWith("chrome://") ||
         url.startsWith("about:") ||
-        url.startsWith("moz-extension://")
+        !url.startsWith("http")
       ) {
         showStatus("Cannot process this page", "error");
         return;

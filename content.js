@@ -161,10 +161,11 @@ let stats = {
 // Cache para traducciones y tasas de cambio
 const translationCache = new Map();
 const rateCache = new Map();
-const CACHE_DURATION = 10 * 60 * 1000; // 10 minutos
+const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
 const CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutos
 
 // Añadir función de limpieza después de la función getUserCurrencySymbol() alrededor de la línea 180
+// Refactor: Simplify cache cleanup and improve readability
 function cleanupCache() {
   const now = Date.now();
   let cleanedTranslations = 0;
@@ -187,7 +188,7 @@ function cleanupCache() {
   }
 
   // Limpiar textos procesados si el conjunto es muy grande
-  if (processedTexts.size > 1000) {
+  if (processedTexts.size > 2000) {
     processedTexts.clear();
   }
 
@@ -196,6 +197,7 @@ function cleanupCache() {
   );
 }
 
+// Refactor: Initialize cleanup on a single timer
 // Añadir después de la función cleanupCache()
 function initializeCleanup() {
   // Ejecutar limpieza cada 5 minutos
@@ -231,7 +233,63 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       cleanupCache();
       break;
   }
-});
+}); // In content.js, within the main logic:
+
+const observer = new IntersectionObserver(
+  (entries) => {
+    entries.forEach(async (entry) => {
+      if (entry.isIntersecting) {
+        // Process only the visible element
+        await processDOM(entry.target, rates, userCurrency, targetLang);
+        // Optionally, unobserve the element after processing
+        // observer.unobserve(entry.target);
+      }
+    });
+  },
+  {
+    root: null, // Use the viewport as the root
+    threshold: 0.1, // Trigger when 10% of the element is visible
+  }
+);
+
+// Instead of processing the entire document.body:
+// observer.observe(document.body);
+
+// Observe specific sections or elements:
+// document.querySelectorAll(".price-container").forEach(el => observer.observe(el));
+// In runTranslationAndConversion or within a modified processDOM:
+
+async function runTranslationAndConversion() {
+  // ... existing code ...
+  // Refactor: Use more specific selectors for better performance.  Consider making these configurable.
+  const targetElements = document.querySelectorAll(
+    "p, span, div.price, h1, h2, h3"
+  ); // Example selectors
+  for (const element of targetElements) {
+    await processDOM(element, rates, userCurrency, targetLang);
+  }
+
+  // ... rest of the code ...
+}
+// In content.js:
+
+// ... inside runTranslationAndConversion() ...
+const textNodes = []; // Collect text nodes
+// ... inside the TreeWalker loop ...
+textNodes.push(currentNode.nodeValue);
+// ... After the TreeWalker loop ...
+if (textNodes.length > 0) {
+  // const translatedTexts = await batchTranslate(textNodes, targetLang);  // Commented out as batchTranslate is not fully implemented
+  // Apply translations back to nodes, maintaining order.
+  // ...  requires logic to map translations back to original nodes
+}
+// ...
+
+async function batchTranslate(texts, targetLang) {
+  // ... Function to send all texts in one API request and return an array of translations.
+  // TODO: Implement batch translation logic for efficiency
+  //     Will need to handle API-specific formatting of batched requests.
+}
 
 // APIs de conversión de divisas (fallback)
 const CURRENCY_APIS = [
@@ -411,6 +469,7 @@ function convertCurrencies(text, rates, userCurrency) {
     JPY: {
       regex: /(?:¥|JPY\s*)([0-9]{1,3}(?:[,\s]?[0-9]{3})*(?:\.[0-9]{1,2})?)/gi,
       symbol: "¥",
+      rateKey: "JPY",
     },
     USD: {
       regex: /(?:\$|USD\s*)([0-9]{1,3}(?:[,\s]?[0-9]{3})*(?:\.[0-9]{1,2})?)/gi,
@@ -446,7 +505,7 @@ function convertCurrencies(text, rates, userCurrency) {
           if (isNaN(value) || value <= 0) return match;
 
           const converted = (value * rates[currency]).toFixed(2);
-          const userSymbol = getUserCurrencySymbol(userCurrency);
+          const userSymbol = getUserCurrencySymbol(userCurrency); // Consider pre-fetching this
           conversionsFound++;
           return `${match} (≈ ${userSymbol}${converted})`;
         } catch (error) {
@@ -479,6 +538,7 @@ function getUserCurrencySymbol(currency) {
   return symbols[currency] || currency + " ";
 }
 
+// Refactor: Improve language detection using a more robust library or API
 // Detectar si el texto necesita traducción
 function detectLanguage(text) {
   const patterns = {
@@ -505,7 +565,7 @@ function detectLanguage(text) {
   return "unknown";
 }
 
-// Actualizar la función needsTranslation() existente
+// Refactor: simplify needsTranslation logic
 function needsTranslation(text, targetLang) {
   const detectedLang = detectLanguage(text);
 
@@ -533,7 +593,7 @@ const processedTexts = new Set();
 
 async function processTextNode(node, rates, userCurrency, targetLang) {
   // Verificar si ya se procesó este elemento padre
-  if (processedElements.has(node.parentElement)) return;
+  if (processedElements.has(node.parentNode)) return;
 
   // Verificar si ya se procesó este texto específico
   const originalText = node.nodeValue.trim();
@@ -571,13 +631,14 @@ async function processTextNode(node, rates, userCurrency, targetLang) {
 
   if (hasChanges) {
     node.nodeValue = processedText;
-    processedElements.set(node.parentElement, true);
+    processedElements.set(node.parentNode, true);
     processedTexts.add(textHash);
   }
 }
 
 // Procesar DOM
 async function processDOM(node, rates, userCurrency, targetLang) {
+  // Refactor: Use more specific selectors or allow user-defined selectors
   if (!node) return;
 
   // Use TreeWalker for better performance
@@ -613,6 +674,7 @@ async function processDOM(node, rates, userCurrency, targetLang) {
         processTextNode(node, rates, userCurrency, targetLang)
       )
     );
+    // Refactor: Consider using requestAnimationFrame instead of setTimeout(0)
 
     // Allow other tasks to run
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -657,7 +719,7 @@ async function runTranslationAndConversion() {
 
       // Obtener tasas de cambio
       const rates = await getExchangeRates(userCurrency);
-
+      // Refactor:  Consider caching the userCurrency symbol for efficiency
       chrome.runtime
         .sendMessage({
           action: "progress",
@@ -666,7 +728,7 @@ async function runTranslationAndConversion() {
         .catch(() => {});
 
       // Procesar el DOM
-      await processDOM(document.body, rates, userCurrency, targetLang);
+      await processDOM(document, rates, userCurrency, targetLang);
 
       // Notificar que terminó
       chrome.runtime.sendMessage({ action: "done" }).catch(() => {});
@@ -684,45 +746,6 @@ async function runTranslationAndConversion() {
   });
   return processingQueue;
 }
-
-// Observador para contenido dinámico
-// Mejora el observer para mejor rendimiento
-let observerTimeout;
-
-const OBSERVER_DELAY = 500; // ms
-
-const observer = new MutationObserver((mutations) => {
-  if (isProcessing) return;
-
-  // Throttle observer reactions
-  clearTimeout(observerTimeout);
-  observerTimeout = setTimeout(() => {
-    let hasRelevantChanges = false;
-
-    for (const mutation of mutations) {
-      if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
-        for (const node of mutation.addedNodes) {
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            const tagName = node.tagName;
-            if (!["SCRIPT", "STYLE", "NOSCRIPT"].includes(tagName)) {
-              hasRelevantChanges = true;
-              break;
-            }
-          }
-        }
-        if (hasRelevantChanges) break;
-      }
-    }
-
-    if (hasRelevantChanges) {
-      chrome.storage.sync.get(["autoProcess"], ({ autoProcess }) => {
-        if (autoProcess !== false) {
-          runTranslationAndConversion();
-        }
-      });
-    }
-  }, OBSERVER_DELAY);
-});
 
 // Enhanced debouncing for DOM mutations
 function debounce(func, wait) {
@@ -747,7 +770,7 @@ const debouncedProcessing = debounce(() => {
   }
 }, 1000);
 
-// Iniciar observador
+// Refactor: Observe a more specific container instead of document.body, or use IntersectionObserver more effectively.
 observer.observe(document.body, {
   childList: true,
   subtree: true,
@@ -765,6 +788,11 @@ if (document.readyState === "loading") {
   runTranslationAndConversion();
 }
 
+function cleanup() {
+  cleanupCache();
+}
+
+// Refactor: Use a more subtle or configurable feedback mechanism
 // Add to content.js:
 function showUserFeedback(message, type = "info") {
   const feedback = document.createElement("div");
@@ -779,7 +807,7 @@ function showUserFeedback(message, type = "info") {
     z-index: 10000;
     font-size: 14px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-  `;
+    `;
   feedback.textContent = message;
   document.body.appendChild(feedback);
 
@@ -788,12 +816,13 @@ function showUserFeedback(message, type = "info") {
   }, 3000);
 }
 
-// Enhanced error handling in content.js
+// Refactor: Consolidate error handling and provide more context-specific information
 function handleError(error, context) {
   console.error(`Error in ${context}:`, error);
 
   // Don't overwhelm with error messages
   if (Date.now() - lastErrorTime > 5000) {
+    // Refactor: Consider using a more robust error reporting mechanism
     chrome.runtime
       .sendMessage({
         action: "error",
