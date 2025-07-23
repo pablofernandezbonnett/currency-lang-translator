@@ -7,6 +7,7 @@ const statusMessage = document.getElementById("statusMessage");
 const msgTimeoutInput = document.getElementById("msgTimeout");
 const autoProcessCheckbox = document.getElementById("autoProcess");
 const showStatsCheckbox = document.getElementById("showStats");
+const compactModeCheckbox = document.getElementById("compactMode");
 const statsSection = document.getElementById("statsSection");
 const conversionsCount = document.getElementById("conversionsCount");
 const translationsCount = document.getElementById("translationsCount");
@@ -39,6 +40,7 @@ function validateSettings(settings) {
     msgTimeout: 3,
     autoProcess: true,
     showStats: false,
+    compactMode: false,
   };
 
   const allowedCurrencies = ["EUR", "USD", "GBP", "JPY", "CNY", "KRW"];
@@ -73,6 +75,10 @@ function validateSettings(settings) {
       typeof settings.showStats === "boolean"
         ? settings.showStats
         : defaults.showStats,
+    compactMode:
+      typeof settings.compactMode === "boolean"
+        ? settings.compactMode
+        : defaults.compactMode,
   };
 }
 
@@ -87,6 +93,7 @@ async function loadSettings() {
         "msgTimeout",
         "autoProcess",
         "showStats",
+        "compactMode",
         "stats",
       ])
     );
@@ -100,8 +107,9 @@ async function loadSettings() {
     msgTimeoutInput.value = validatedSettings.msgTimeout;
     autoProcessCheckbox.checked = validatedSettings.autoProcess;
     showStatsCheckbox.checked = validatedSettings.showStats;
+    compactModeCheckbox.checked = validatedSettings.compactMode;
 
-    stats = validatedSettings.stats;
+    stats = settings.stats || { conversions: 0, translations: 0 };
     updateStatsDisplay();
 
     toggleStatsSection();
@@ -114,6 +122,7 @@ async function loadSettings() {
 // Guardar configuración
 async function saveSetting(key, value) {
   try {
+    await safeStorageOperation(() => chrome.storage.sync.set({ [key]: value }));
   } catch (error) {
     console.error("Error saving setting:", error);
     showStatus("Error saving setting", "error");
@@ -214,6 +223,15 @@ if (showStatsCheckbox) {
     toggleStatsSection();
     showStatus(
       "Statistics " + (showStatsCheckbox.checked ? "shown" : "hidden")
+    );
+  });
+}
+
+if (compactModeCheckbox) {
+  compactModeCheckbox.addEventListener("change", () => {
+    saveSetting("compactMode", compactModeCheckbox.checked);
+    showStatus(
+      "Compact mode " + (compactModeCheckbox.checked ? "enabled" : "disabled")
     );
   });
 }
@@ -396,10 +414,3 @@ document.addEventListener("DOMContentLoaded", () => {
     showStatsCheckbox.title = "Show conversion and translation statistics";
   }
 });
-
-// Ejecutar inmediatamente si el DOM ya está listo
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", loadSettings);
-} else {
-  loadSettings();
-}

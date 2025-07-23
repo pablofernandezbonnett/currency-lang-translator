@@ -1,16 +1,3 @@
-// Service Worker para Manifest V3
-chrome.runtime.onInstalled.addListener((details) => {
-  if (details.reason === "install") {
-    // Configuración inicial
-    chrome.storage.sync.set({
-      currency: "EUR",
-      language: "en",
-      msgTimeout: 3,
-      autoProcess: true,
-    });
-  }
-});
-
 // Manejar actualizaciones de la extensión
 chrome.runtime.onUpdateAvailable.addListener(() => {
   chrome.runtime.reload();

@@ -151,6 +151,7 @@ if (window.currencyTranslatorProcessed) {
 window.currencyTranslatorProcessed = true;
 
 let isProcessing = false;
+let intersectionObserver = null;
 
 // Estadísticas de procesamiento
 let stats = {
@@ -234,30 +235,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       break;
   }
 }); // In content.js, within the main logic:
-
-const observer = new IntersectionObserver(
-  (entries) => {
-    entries.forEach(async (entry) => {
-      if (entry.isIntersecting) {
-        // Process only the visible element
-        await processDOM(entry.target, rates, userCurrency, targetLang);
-        // Optionally, unobserve the element after processing
-        // observer.unobserve(entry.target);
-      }
-    });
-  },
-  {
-    root: null, // Use the viewport as the root
-    threshold: 0.1, // Trigger when 10% of the element is visible
-  }
-);
-
-// Instead of processing the entire document.body:
-// observer.observe(document.body);
-
-// Observe specific sections or elements:
-// document.querySelectorAll(".price-container").forEach(el => observer.observe(el));
-// In runTranslationAndConversion or within a modified processDOM:
 
 async function runTranslationAndConversion() {
   // ... existing code ...
@@ -728,7 +705,33 @@ async function runTranslationAndConversion() {
         .catch(() => {});
 
       // Procesar el DOM
-      await processDOM(document, rates, userCurrency, targetLang);
+      // Disconnect any previous observer to avoid duplicates
+      if (intersectionObserver) {
+        intersectionObserver.disconnect();
+      }
+
+      // Create a new observer with the current settings in its scope
+      intersectionObserver = new IntersectionObserver(
+        (entries, observer) => {
+          entries.forEach(async (entry) => {
+            if (entry.isIntersecting) {
+              // Process the visible element
+              await processDOM(entry.target, rates, userCurrency, targetLang);
+              // Stop observing the element after it has been processed
+              observer.unobserve(entry.target);
+            }
+          });
+        },
+        { root: null, threshold: 0.1 }
+      );
+
+      // Instead of processing the whole document, observe relevant elements
+      // for lazy processing as they become visible.
+      document
+        .querySelectorAll(
+          "p, span, div, h1, h2, h3, a, li, td, th, b, i, em, strong"
+        )
+        .forEach((el) => intersectionObserver.observe(el));
 
       // Notificar que terminó
       chrome.runtime.sendMessage({ action: "done" }).catch(() => {});
@@ -770,8 +773,11 @@ const debouncedProcessing = debounce(() => {
   }
 }, 1000);
 
-// Refactor: Observe a more specific container instead of document.body, or use IntersectionObserver more effectively.
-observer.observe(document.body, {
+// Observe DOM changes for dynamically loaded content
+const mutationObserver = new MutationObserver(debouncedProcessing);
+
+// Start observing the document body for changes.
+mutationObserver.observe(document.body, {
   childList: true,
   subtree: true,
 });
