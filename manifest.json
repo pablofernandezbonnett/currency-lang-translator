@@ -7,12 +7,9 @@
   "homepage_url": "https://github.com/pmfb/currency-lang-translator",
   "permissions": ["storage", "activeTab", "alarms"],
   "host_permissions": [
+    "https://api.frankfurter.app/*",
     "https://api.exchangerate.host/*",
-    "https://api.exchangerate-api.com/*",
-    "https://cdn.jsdelivr.net/*",
-    "https://libretranslate.de/*",
-    "https://api.mymemory.translated.net/*",
-    "https://translate.googleapis.com/*"
+    "https://lingva.ml/*"
   ],
   "action": {
     "default_icon": {

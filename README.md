@@ -57,7 +57,7 @@ A powerful Chrome extension that automatically converts currencies and translate
 
 ### Advanced Options
 
-- **Auto-Process New Content**: Automatically process dynamically loaded content
+- **Process Automatically**: Enable/disable automatic processing on page load.
 - **Show Statistics**: Display conversion and translation counts
 - **Compact Display Mode**: Minimize visual impact of conversions
 - **Show Original Text**: Keep original text visible alongside translations
@@ -74,8 +74,9 @@ A powerful Chrome extension that automatically converts currencies and translate
 ### Manual Processing
 
 1. Click the extension icon in your toolbar
-2. Click "🔄 Reprocess" to manually process the current page
-3. Use "🗑️ Clear Cache" to refresh all cached data
+2. Disable "Process automatically on page load" if you want to control execution.
+3. Click "🔄 Process" to manually process the current page.
+4. Use "🗑️ Clear Cache" to refresh all cached data.
 
 ### Example Output
 
@@ -91,15 +92,12 @@ Processed: これは美味しいコーヒーです (This is delicious coffee)
 
 ### Currency APIs (with fallback)
 
-1. **FawazAhmed0 Currency API** - Primary free API
-2. **ExchangeRate-API** - Secondary fallback
-3. **ExchangeRate.host** - Tertiary fallback
+1. **Frankfurter.app** - Primary open-source API
+2. **ExchangeRate.host** - Secondary fallback
 
 ### Translation APIs (with fallback)
 
-1. **LibreTranslate** - Primary open-source API
-2. **MyMemory** - Secondary fallback
-3. **Google Translate (Free)** - Tertiary fallback
+1. **Lingva.ml** - Primary open-source API
 
 ## 📊 Statistics & Monitoring
 
@@ -254,7 +252,7 @@ Found a bug or need help?
 ## 🎖️ Acknowledgments
 
 - **FawazAhmed0** for the excellent free currency API
-- **LibreTranslate** for open-source translation services
+- **Lingva.ml** for open-source translation services
 - **Chrome Extensions Team** for comprehensive documentation
 - **Open Source Community** for inspiration and feedback
 

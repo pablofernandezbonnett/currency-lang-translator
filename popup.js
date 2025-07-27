@@ -265,12 +265,19 @@ reprocessButton.addEventListener("click", async () => {
       showStatus("No active tab found", "error");
     }
   } catch (error) {
-    console.error("Error reprocessing:", error);
-    showStatus("Error: " + error.message, "error");
+    console.error("Error reprocessing:", error.message);
+    if (error.message.includes("Receiving end does not exist")) {
+      showStatus(
+        "Connection failed. Please reload the page and try again.",
+        "error"
+      );
+    } else {
+      showStatus("Error: " + error.message, "error");
+    }
   } finally {
     reprocessButton.disabled = false;
     if (reprocessText) {
-      reprocessText.innerHTML = "🔄 Reprocess";
+      reprocessText.innerHTML = "🔄 Process";
     }
   }
 });
@@ -293,8 +300,15 @@ if (clearCacheButton) {
         showStatus("No active tab found", "error");
       }
     } catch (error) {
-      console.error("Error clearing cache:", error);
-      showStatus("Error clearing cache", "error");
+      console.error("Error clearing cache:", error.message);
+      if (error.message.includes("Receiving end does not exist")) {
+        showStatus(
+          "Connection failed. Please reload the page and try again.",
+          "error"
+        );
+      } else {
+        showStatus("Error clearing cache", "error");
+      }
     } finally {
       clearCacheButton.disabled = false;
     }
@@ -317,7 +331,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       showStatus("Processing complete!", "success");
       reprocessButton.disabled = false;
       if (reprocessText) {
-        reprocessText.innerHTML = "🔄 Reprocess";
+        reprocessText.innerHTML = "🔄 Process";
       }
       break;
 
@@ -325,7 +339,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       showStatus("Error: " + (request.error || "Unknown error"), "error");
       reprocessButton.disabled = false;
       if (reprocessText) {
-        reprocessText.innerHTML = "🔄 Reprocess";
+        reprocessText.innerHTML = "🔄 Process";
       }
       break;
 
