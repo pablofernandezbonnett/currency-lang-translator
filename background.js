@@ -76,7 +76,7 @@ const translationQueue = [];
 let isProcessingTranslationQueue = false;
 const TRANSLATION_DELAY = 1000; // 1 second delay between translation requests
 
-// Manejar actualizaciones de la extensión
+// Handle extension updates
 chrome.runtime.onUpdateAvailable.addListener(() => {
   chrome.runtime.reload();
 });
@@ -87,12 +87,12 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     chrome.tabs.query({}, (tabs) => {
       tabs.forEach((tab) => {
         chrome.tabs.sendMessage(tab.id, { action: "clearCache" }).catch((e) => {
-          // Ignorar errores si el tab no puede recibir mensajes
+          // Ignore errors if the tab cannot receive messages
         });
       });
     });
   } else if (alarm.name === "deepCleanup") {
-    // Limpieza profunda cada hora
+    // Deep cleanup every hour
     chrome.tabs.query({}, (tabs) => {
       tabs.forEach((tab) => {
         chrome.tabs
@@ -103,7 +103,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
-// Crear alarma adicional para limpieza profunda
+// Create additional alarm for deep cleanup
 chrome.alarms.create("deepCleanup", { periodInMinutes: 60 });
 
 async function processTranslationQueue() {
@@ -114,7 +114,7 @@ async function processTranslationQueue() {
   isProcessingTranslationQueue = true;
 
   while (translationQueue.length > 0) {
-    const { text, targetLang, sendResponse } = translationQueue.shift();
+    const { text, targetLang, sendResponse, controller } = translationQueue.shift();
 
     if (!text || !text.trim()) {
       sendResponse({ translation: "" });
@@ -124,7 +124,7 @@ async function processTranslationQueue() {
     if (Date.now() < TRANSLATION_API.disabledUntil) {
       sendResponse({ error: "Translation API is temporarily disabled." });
       // Re-add to front of queue if API is disabled
-      translationQueue.unshift({ text, targetLang, sendResponse });
+      translationQueue.unshift({ text, targetLang, sendResponse, controller });
       isProcessingTranslationQueue = false;
       return;
     }
@@ -136,7 +136,7 @@ async function processTranslationQueue() {
         const url = TRANSLATION_API.url("auto", targetLang, text);
         const response = await fetch(url, {
           method: "GET",
-          signal: AbortSignal.timeout(10000),
+          signal: controller.signal,
         });
 
         if (!response.ok) {
@@ -151,12 +151,17 @@ async function processTranslationQueue() {
         break; // Exit retry loop on success
       } catch (error) {
         lastError = error;
+        if (error.name === 'AbortError') {
+          console.log(`Translation for "${text}" aborted.`);
+          sendResponse({ error: "Translation aborted." });
+          break; // Exit retry loop if aborted
+        }
         if (i < 1) await new Promise((res) => setTimeout(res, 500)); // Wait before retry
       }
     }
 
-    if (lastError) {
-      // Both attempts failed
+    if (lastError && lastError.name !== 'AbortError') {
+      // Both attempts failed and not an abort error
       TRANSLATION_API.disabledUntil = Date.now() + API_BACKOFF_DURATION;
       sendResponse({
         error: `Translation API failed after 1 retry and is disabled for 5 minutes. Error: ${lastError.message}`,
@@ -267,11 +272,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   } else if (request.action === "translate") {
     const { text, targetLang } = request.payload;
-    translationQueue.push({ text, targetLang, sendResponse });
+    const tabId = sender.tab ? sender.tab.id : null;
+    const controller = new AbortController();
+    translationQueue.push({ text, targetLang, sendResponse, tabId, controller });
     if (!isProcessingTranslationQueue) {
       processTranslationQueue();
     }
     return true; // Required for asynchronous sendResponse
+  } else if (request.action === "cancelTranslation") {
+    const tabIdToCancel = sender.tab ? sender.tab.id : null;
+    if (tabIdToCancel) {
+      // Abort any ongoing requests for the cancelled tab
+      translationQueue.forEach(req => {
+        if (req.tabId === tabIdToCancel && req.controller) {
+          req.controller.abort();
+        }
+      });
+      // Filter out requests from the cancelled tab
+      translationQueue = translationQueue.filter(req => req.tabId !== tabIdToCancel);
+      console.log(`Cancelled translation requests for tab ${tabIdToCancel}. Remaining queue size: ${translationQueue.length}`);
+    }
   }
   else if (
     ["done", "error", "progress", "updateStats"].includes(request.action)
@@ -291,7 +311,7 @@ self.addEventListener("error", (event) => {
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === "complete" && tab.url) {
-    // Solo activar en páginas web (no en chrome://, about:, etc.)
+    // Only activate on web pages (not chrome://, about:, etc.)
     if (tab.url.startsWith("http://") || tab.url.startsWith("https://")) {
       chrome.action.enable(tabId);
     } else {
