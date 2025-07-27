@@ -119,7 +119,7 @@
     return;
   }
 
-  // Evitar múltiples ejecuciones
+  // Prevent multiple executions
   if (window.currencyTranslatorProcessed) {
     return;
   }
@@ -128,26 +128,26 @@
   let isProcessing = false;
   let intersectionObserver = null;
 
-  // Estadísticas de procesamiento
+  // Processing statistics
   let stats = {
     conversions: 0,
     translations: 0,
   };
 
-  // Cache para traducciones y tasas de cambio
+  // Cache for translations and exchange rates
   const translationCache = new Map();
   const rateCache = new Map();
   const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
-  const CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutos
+  const CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
-  // Añadir función de limpieza después de la función getUserCurrencySymbol() alrededor de la línea 180
+  // Add cleanup function after getUserCurrencySymbol() function around line 180
   // Refactor: Simplify cache cleanup and improve readability
   function cleanupCache() {
     const now = Date.now();
     let cleanedTranslations = 0;
     let cleanedRates = 0;
 
-    // Limpiar cache de traducciones
+    // Clear translation cache
     for (const [key, value] of translationCache.entries()) {
       if (now - value.timestamp > CACHE_DURATION) {
         translationCache.delete(key);
@@ -155,7 +155,7 @@
       }
     }
 
-    // Limpiar cache de tasas
+    // Clear rate cache
     for (const [key, value] of rateCache.entries()) {
       if (now - value.timestamp > CACHE_DURATION) {
         rateCache.delete(key);
@@ -163,7 +163,7 @@
       }
     }
 
-    // Limpiar textos procesados si el conjunto es muy grande
+    // Clear processed texts if the set is too large
     if (processedTexts.size > 2000) {
       processedTexts.clear();
     }
@@ -174,21 +174,22 @@
   }
 
   // Refactor: Initialize cleanup on a single timer
-  // Añadir después de la función cleanupCache()
   function initializeCleanup() {
-    // Ejecutar limpieza cada 5 minutos
+    // Execute cleanup every 5 minutes
     setInterval(cleanupCache, CLEANUP_INTERVAL);
 
-    // Limpiar al cambiar de página
+    // Clear on page change
     window.addEventListener("beforeunload", () => {
       cleanupCache();
+      // Send a message to background.js to cancel ongoing translations for this tab
+      chrome.runtime.sendMessage({ action: "cancelTranslation" }).catch(() => {});
     });
   }
 
-  // Añadir al final del archivo, antes de la ejecución inicial
+  // Add to the end of the file, before initial execution
   initializeCleanup();
 
-  // También añadir limpieza manual en el listener de mensajes
+  // Also add manual cleanup in the message listener
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     switch (request.action) {
       case "reprocess":
@@ -211,7 +212,7 @@
     }
   });
 
-  // Cargar estadísticas guardadas
+  // Load saved statistics
   async function loadStats() {
     try {
       const result = await chrome.storage.sync.get(["stats"]);
@@ -223,11 +224,11 @@
     }
   }
 
-  // Guardar estadísticas
+  // Save statistics
   async function saveStats() {
     try {
       await chrome.storage.sync.set({ stats });
-      // Notificar al popup sobre la actualización
+      // Notify popup about the update
       chrome.runtime
         .sendMessage({
           action: "updateStats",
@@ -239,12 +240,12 @@
     }
   }
 
-  // Obtener tasas de cambio para múltiples divisas
+  // Get exchange rates for multiple currencies
   async function getExchangeRates(userCurrency) {
     const symbolsToFind = ["JPY", "USD", "GBP", "EUR", "CNY", "KRW"];
     const foundSymbols = new Set();
 
-    // 1. Detectar qué símbolos de moneda están en la página
+    // 1. Detect which currency symbols are on the page
     const textContent = document.body.innerText || "";
     for (const symbol of symbolsToFind) {
       if (textContent.includes(symbol)) {
@@ -252,7 +253,7 @@
       }
     }
 
-    // No hacer nada si no se encuentran símbolos o solo se encuentra la moneda del usuario
+    // Do nothing if no symbols are found or only the user's currency is found
     if (
       foundSymbols.size === 0 ||
       (foundSymbols.size === 1 && foundSymbols.has(userCurrency))
@@ -260,7 +261,7 @@
       return {};
     }
 
-    // 2. Solicitar solo las tasas de cambio necesarias
+    // 2. Request only necessary exchange rates
     const symbolsToRequest = Array.from(foundSymbols).filter(
       (s) => s !== userCurrency
     );
@@ -280,7 +281,7 @@
     return rates;
   }
 
-  // Traducir texto con fallback
+  // Translate text with fallback
   async function translateText(text, targetLang = "en") {
     if (!text || text.length < 2) return text;
 
@@ -297,7 +298,7 @@
       return cached.translation;
     }
 
-    // Limitar longitud del texto
+    // Limit text length
     if (text.length > 500) {
       text = text.substring(0, 500) + "...";
     }
@@ -332,9 +333,9 @@
     return text; // Return original text on any failure
   }
 
-  // Convertir divisas en texto
+  // Convert currencies in text
   function convertCurrencies(text, rates, userCurrency) {
-    // Patrones de moneda más robustos
+    // More robust currency patterns
     // Improve currency regex patterns in convertCurrencies function:
     const currencyPatterns = {
       JPY: {
@@ -393,7 +394,7 @@
       }
     }
 
-    // Actualizar estadísticas si se encontraron conversiones
+    // Update statistics if conversions were found
     if (conversionsFound > 0) {
       stats.conversions += conversionsFound;
       saveStats();
@@ -402,7 +403,7 @@
     return convertedText;
   }
 
-  // Obtener símbolo de divisa del usuario
+  // Get user currency symbol
   function getUserCurrencySymbol(currency) {
     const symbols = {
       USD: "$",
@@ -416,7 +417,6 @@
   }
 
   // Refactor: Improve language detection using a more robust library or API
-  // Detectar si el texto necesita traducción
   function detectLanguage(text) {
     const patterns = {
       japanese: {
@@ -446,7 +446,7 @@
   function needsTranslation(text, targetLang) {
     const detectedLang = detectLanguage(text);
 
-    // Mapear idiomas detectados a códigos de idioma
+    // Map detected languages to language codes
     const langMap = {
       japanese: "ja",
       korean: "ko",
@@ -457,10 +457,10 @@
       hebrew: "he",
     };
 
-    // Si el idioma detectado es el mismo que el objetivo, no traducir
+    // If the detected language is the same as the target, do not translate
     if (langMap[detectedLang] === targetLang) return false;
 
-    // Solo traducir si contiene caracteres no latinos y el texto es suficientemente largo
+    // Only translate if it contains non-Latin characters and the text is long enough
     return detectedLang !== "unknown" && text.trim().length > 3;
   }
 
@@ -478,8 +478,8 @@
   }
 
   async function translateTextNodesInBatches(textNodesToTranslate, targetLang) {
-    const BATCH_SIZE = 20; // Número de nodos de texto a agrupar por solicitud
-    const TEXT_SEPARATOR = " "; // Separador único
+    const BATCH_SIZE = 20; // Number of text nodes to group per request
+    const TEXT_SEPARATOR = " "; // Unique separator
 
     for (let i = 0; i < textNodesToTranslate.length; i += BATCH_SIZE) {
       const batch = textNodesToTranslate.slice(i, i + BATCH_SIZE);
@@ -500,7 +500,7 @@
         );
         try {
           const response = await chrome.runtime.sendMessage({
-            action: "translate", // Volvemos a la acción 'translate'
+            action: "translate", // Return to 'translate' action
             payload: { text: combinedText, targetLang },
           });
 
@@ -516,12 +516,12 @@
           saveStats();
         } catch (error) {
           console.warn("Translation batch request failed:", error.message);
-          // Si falla, usar los textos originales combinados
+          // If it fails, use the combined original texts
           translatedCombinedText = combinedText;
         }
       }
 
-      // Dividir la traducción combinada y actualizar los nodos
+      // Split the combined translation and update the nodes
       const translatedTexts = translatedCombinedText.split(TEXT_SEPARATOR);
 
       batch.forEach((item, index) => {
@@ -535,7 +535,7 @@
           }
           processedTexts.add(item.originalText.substring(0, 100));
         } else if (item.hasChanges) {
-          // Si no hubo traducción pero sí cambios de divisa, aplicar esos cambios
+          // If there was no translation but there were currency changes, apply those changes
           item.node.nodeValue = item.processedText;
           if (item.node.parentNode) {
             processedElements.set(item.node.parentNode, true);
@@ -546,25 +546,25 @@
     }
   }
 
-  // Procesar nodo de texto
+  // Process text node
   let processedElements = new WeakMap();
   const processedTexts = new Set();
 
   function processTextNode(node, rates, userCurrency, targetLang) {
-    // Verificar si ya se procesó este elemento padre
+    // Check if this parent element has already been processed
     if (processedElements.has(node.parentNode)) return null;
 
-    // Verificar si ya se procesó este texto específico
+    // Check if this specific text has already been processed
     const originalText = node.nodeValue.trim();
     if (!originalText || originalText.length < 2) return null;
 
-    const textHash = originalText.substring(0, 100); // Usar primeros 100 chars como hash
+    const textHash = originalText.substring(0, 100); // Use first 100 chars as hash
     if (processedTexts.has(textHash)) return null;
 
     let processedText = originalText;
     let hasChanges = false;
 
-    // Conversión de divisas
+    // Currency conversion
     if (Object.keys(rates).length > 0) {
       const convertedText = convertCurrencies(
         processedText,
@@ -577,7 +577,7 @@
       }
     }
 
-    // Devolver información para procesamiento posterior
+    // Return information for further processing
     return {
       node,
       originalText,
@@ -587,7 +587,7 @@
     };
   }
 
-  // Procesar DOM
+  // Process DOM
   async function processDOM(node, rates, userCurrency, targetLang) {
     if (!node) return;
 
@@ -615,14 +615,14 @@
       textNodes.push(currentNode);
     }
 
-    // Primera pasada: Conversión de divisas y recolección de nodos para traducción
+    // First pass: Currency conversion and collection of nodes for translation
     for (const textNode of textNodes) {
       const result = processTextNode(textNode, rates, userCurrency, targetLang);
       if (result) {
         if (result.needsTranslation) {
           nodesForTranslation.push(result);
         } else if (result.hasChanges) {
-          // Si solo hay cambios de divisa, aplicar inmediatamente
+          // If there are only currency changes, apply immediately
           textNode.nodeValue = result.processedText;
           processedElements.set(result.node.parentNode, true);
           processedTexts.add(result.originalText.substring(0, 100));
@@ -630,13 +630,13 @@
       }
     }
 
-    // Segunda pasada: Procesar traducciones por lotes
+    // Second pass: Process translations in batches
     if (nodesForTranslation.length > 0) {
       await translateTextNodesInBatches(nodesForTranslation, targetLang);
     }
   }
 
-  // main app
+  // Main application logic
   let processingQueue = Promise.resolve();
 
   async function runTranslationAndConversion() {
@@ -654,10 +654,10 @@
           })
           .catch(() => {});
 
-        // Cargar estadísticas
+        // Load saved statistics
         await loadStats();
 
-        // Obtener configuraciones
+        // Get settings
         const { currency, language, autoProcess } =
           await chrome.storage.sync.get([
             "currency",
@@ -675,7 +675,7 @@
           })
           .catch(() => {});
 
-        // Obtener tasas de cambio
+        // Get exchange rates
         const symbolsOnPage = detectCurrenciesOnPage();
         const rates = await getExchangeRates(symbolsOnPage, userCurrency);
         // Refactor:  Consider caching the userCurrency symbol for efficiency
@@ -730,7 +730,7 @@
         });
 
 
-        // Notificar que terminó
+        // Notify that it finished
         chrome.runtime.sendMessage({ action: "done" }).catch(() => {});
       } catch (error) {
         console.error("Error in runTranslationAndConversion:", error);
@@ -779,12 +779,12 @@
     subtree: true,
   });
 
-  // Manejar errores no capturados
+  // Handle uncaught errors
   window.addEventListener("error", (event) => {
     console.error("Content script error:", event.error);
   });
 
-  // Ejecutar al cargar
+  // Execute on load
   const initialRun = () => {
     chrome.storage.sync.get(["autoProcess"], ({ autoProcess }) => {
       // Default to true if the setting is not present
@@ -805,7 +805,6 @@
   }
 
   // Refactor: Use a more subtle or configurable feedback mechanism
-  // Add to content.js:
   function showUserFeedback(message, type = "info") {
     const feedback = document.createElement("div");
     feedback.style.cssText = `
