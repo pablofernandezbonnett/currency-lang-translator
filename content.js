@@ -84,7 +84,9 @@
     }
 
     console.log(
-      `[API] Requesting rates from background for ${currenciesToFetch.join(",")} -> ${toCurrency}`
+      `[API] Requesting rates from background for ${currenciesToFetch.join(
+        ","
+      )} -> ${toCurrency}`
     );
 
     const response = await chrome.runtime.sendMessage({
@@ -94,7 +96,9 @@
 
     if (response.error) {
       console.warn(
-        `Failed to get rates for ${currenciesToFetch.join(",")} -> ${toCurrency}:`,
+        `Failed to get rates for ${currenciesToFetch.join(
+          ","
+        )} -> ${toCurrency}:`,
         response.error
       );
       return rates; // Return what we have from cache
@@ -249,12 +253,17 @@
     }
 
     // No hacer nada si no se encuentran símbolos o solo se encuentra la moneda del usuario
-    if (foundSymbols.size === 0 || (foundSymbols.size === 1 && foundSymbols.has(userCurrency))) {
+    if (
+      foundSymbols.size === 0 ||
+      (foundSymbols.size === 1 && foundSymbols.has(userCurrency))
+    ) {
       return {};
     }
 
     // 2. Solicitar solo las tasas de cambio necesarias
-    const symbolsToRequest = Array.from(foundSymbols).filter(s => s !== userCurrency);
+    const symbolsToRequest = Array.from(foundSymbols).filter(
+      (s) => s !== userCurrency
+    );
     if (symbolsToRequest.length === 0) {
       return {};
     }
@@ -469,54 +478,68 @@
   }
 
   async function translateTextNodesInBatches(textNodesToTranslate, targetLang) {
-    const BATCH_SIZE = 5; // Número de nodos de texto a agrupar por solicitud
+    const BATCH_SIZE = 20; // Número de nodos de texto a agrupar por solicitud
+    const TEXT_SEPARATOR = " "; // Separador único
+
     for (let i = 0; i < textNodesToTranslate.length; i += BATCH_SIZE) {
       const batch = textNodesToTranslate.slice(i, i + BATCH_SIZE);
-      const textsToTranslate = batch.map(item => item.originalText);
+      const textsToTranslate = batch.map((item) => item.originalText);
 
       if (textsToTranslate.length === 0) continue;
 
-      const cacheKey = `${textsToTranslate.join("|")}_${targetLang}`;
+      const combinedText = textsToTranslate.join(TEXT_SEPARATOR);
+      const cacheKey = `${combinedText}_${targetLang}`;
       const cached = translationCache.get(cacheKey);
 
-      let translatedTexts = [];
+      let translatedCombinedText = "";
       if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-        translatedTexts = cached.translation;
+        translatedCombinedText = cached.translation;
       } else {
-        console.log(`[API] Attempting to translate batch of texts to ${targetLang}`);
+        console.log(
+          `[API] Attempting to translate batch of texts to ${targetLang}`
+        );
         try {
           const response = await chrome.runtime.sendMessage({
-            action: "translateBatch", // Nueva acción para traducción por lotes
-            payload: { texts: textsToTranslate, targetLang },
+            action: "translate", // Volvemos a la acción 'translate'
+            payload: { text: combinedText, targetLang },
           });
 
           if (response.error) {
             throw new Error(response.error);
           }
-          translatedTexts = response.translations;
-          translationCache.set(cacheKey, { translation: translatedTexts, timestamp: Date.now() });
+          translatedCombinedText = response.translation;
+          translationCache.set(cacheKey, {
+            translation: translatedCombinedText,
+            timestamp: Date.now(),
+          });
           stats.translations += textsToTranslate.length;
           saveStats();
         } catch (error) {
           console.warn("Translation batch request failed:", error.message);
-          // Si falla, usar los textos originales para evitar bloquear
-          translatedTexts = textsToTranslate;
+          // Si falla, usar los textos originales combinados
+          translatedCombinedText = combinedText;
         }
       }
 
-      // Actualizar los nodos con los textos traducidos
+      // Dividir la traducción combinada y actualizar los nodos
+      const translatedTexts = translatedCombinedText.split(TEXT_SEPARATOR);
+
       batch.forEach((item, index) => {
         const translated = translatedTexts[index];
         if (translated && translated !== item.originalText) {
           item.node.nodeValue = item.hasChanges
             ? `${item.processedText} | ${translated}`
             : `${item.processedText} (${translated})`;
-          processedElements.set(item.node.parentNode, true);
+          if (item.node.parentNode) {
+            processedElements.set(item.node.parentNode, true);
+          }
           processedTexts.add(item.originalText.substring(0, 100));
         } else if (item.hasChanges) {
           // Si no hubo traducción pero sí cambios de divisa, aplicar esos cambios
           item.node.nodeValue = item.processedText;
-          processedElements.set(item.node.parentNode, true);
+          if (item.node.parentNode) {
+            processedElements.set(item.node.parentNode, true);
+          }
           processedTexts.add(item.originalText.substring(0, 100));
         }
       });
@@ -659,12 +682,53 @@
         chrome.runtime
           .sendMessage({
             action: "progress",
-            message: "Processing content...",
+            message: "Processing content... (visible elements)",
           })
           .catch(() => {});
 
-        // Procesar el cuerpo del documento directamente
-        await processDOM(document.body, rates, userCurrency, targetLang);
+        // Initialize IntersectionObserver for visible elements
+        if (intersectionObserver) {
+          intersectionObserver.disconnect();
+        }
+        intersectionObserver = new IntersectionObserver(
+          (entries) => {
+            entries.forEach(async (entry) => {
+              if (entry.isIntersecting) {
+                // Process only visible text nodes within the intersecting element
+                await processDOM(entry.target, rates, userCurrency, targetLang);
+                intersectionObserver.unobserve(entry.target); // Stop observing once processed
+              }
+            });
+          },
+          { root: null, threshold: 0.1 } // Observe when 10% of element is visible
+        );
+
+        // Observe all text nodes for visibility
+        const allTextNodes = [];
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+          acceptNode: function (node) {
+            const parent = node.parentElement;
+            if (!parent) return NodeFilter.FILTER_REJECT;
+            const tagName = parent.tagName;
+            if (
+              ["SCRIPT", "STYLE", "NOSCRIPT", "IFRAME", "SVG"].includes(tagName)
+            ) {
+              return NodeFilter.FILTER_REJECT;
+            }
+            return NodeFilter.FILTER_ACCEPT;
+          },
+        });
+        let node;
+        while ((node = walker.nextNode())) {
+          allTextNodes.push(node);
+        }
+
+        allTextNodes.forEach((textNode) => {
+          if (textNode.parentNode) { // Ensure parentNode exists before observing
+            intersectionObserver.observe(textNode.parentNode);
+          }
+        });
+
 
         // Notificar que terminó
         chrome.runtime.sendMessage({ action: "done" }).catch(() => {});

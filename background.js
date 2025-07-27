@@ -66,10 +66,15 @@ const CURRENCY_APIS = [
 
 const TRANSLATION_API = {
   name: "lingva",
-  baseUrl: "https://lingva.ml/api/v1/translate", // Base URL for POST requests
-  parseResponse: (data) => data.translatedText, // Assuming data.translatedText is an array of translated strings
+  url: (source, target, text) =>
+    `https://lingva.ml/api/v1/${source}/${target}/${encodeURIComponent(text)}`,
+  parseResponse: (data) => data.translation, // Lingva returns 'translation' for single text
   disabledUntil: 0,
 };
+
+const translationQueue = [];
+let isProcessingTranslationQueue = false;
+const TRANSLATION_DELAY = 1000; // 1 second delay between translation requests
 
 // Manejar actualizaciones de la extensión
 chrome.runtime.onUpdateAvailable.addListener(() => {
@@ -100,6 +105,70 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 // Crear alarma adicional para limpieza profunda
 chrome.alarms.create("deepCleanup", { periodInMinutes: 60 });
+
+async function processTranslationQueue() {
+  if (isProcessingTranslationQueue || translationQueue.length === 0) {
+    return;
+  }
+
+  isProcessingTranslationQueue = true;
+
+  while (translationQueue.length > 0) {
+    const { text, targetLang, sendResponse } = translationQueue.shift();
+
+    if (!text || !text.trim()) {
+      sendResponse({ translation: "" });
+      continue;
+    }
+
+    if (Date.now() < TRANSLATION_API.disabledUntil) {
+      sendResponse({ error: "Translation API is temporarily disabled." });
+      // Re-add to front of queue if API is disabled
+      translationQueue.unshift({ text, targetLang, sendResponse });
+      isProcessingTranslationQueue = false;
+      return;
+    }
+
+    let lastError = null;
+    for (let i = 0; i < 2; i++) {
+      try {
+        console.log(`[API] Translating text: "${text}"`);
+        const url = TRANSLATION_API.url("auto", targetLang, text);
+        const response = await fetch(url, {
+          method: "GET",
+          signal: AbortSignal.timeout(10000),
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            `API request failed with status ${response.status}`
+          );
+        }
+
+        const data = await response.json();
+        TRANSLATION_API.disabledUntil = 0; // Reset on success
+        sendResponse({ translation: TRANSLATION_API.parseResponse(data) });
+        break; // Exit retry loop on success
+      } catch (error) {
+        lastError = error;
+        if (i < 1) await new Promise((res) => setTimeout(res, 500)); // Wait before retry
+      }
+    }
+
+    if (lastError) {
+      // Both attempts failed
+      TRANSLATION_API.disabledUntil = Date.now() + API_BACKOFF_DURATION;
+      sendResponse({
+        error: `Translation API failed after 1 retry and is disabled for 5 minutes. Error: ${lastError.message}`,
+      });
+    }
+
+    // Add a delay before processing the next item in the queue
+    await new Promise(resolve => setTimeout(resolve, TRANSLATION_DELAY));
+  }
+
+  isProcessingTranslationQueue = false;
+}
 
 // Improved message handling with error catching
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -196,58 +265,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ error: `All currency APIs failed: ${errors.join(", ")}` });
     })();
     return true;
-  } else if (request.action === "translateBatch") {
-    const { texts, targetLang } = request.payload;
-    (async () => {
-      if (!texts || texts.length === 0) {
-        sendResponse({ translations: [] });
-        return;
-      }
-
-      if (Date.now() < TRANSLATION_API.disabledUntil) {
-        sendResponse({ error: "Translation API is temporarily disabled." });
-        return;
-      }
-
-      let lastError = null;
-      for (let i = 0; i < 2; i++) {
-        try {
-          console.log(`[API] Translating batch of texts: ${texts.length} items`);
-          const response = await fetch(TRANSLATION_API.baseUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              q: texts,
-              source: "auto",
-              target: targetLang,
-              format: "text",
-            }),
-            signal: AbortSignal.timeout(10000),
-          });
-
-          if (!response.ok) {
-            throw new Error(
-              `API request failed with status ${response.status}`
-            );
-          }
-
-          const data = await response.json();
-          TRANSLATION_API.disabledUntil = 0; // Reset on success
-          sendResponse({ translations: TRANSLATION_API.parseResponse(data) });
-          return;
-        } catch (error) {
-          lastError = error;
-          if (i < 1) await new Promise((res) => setTimeout(res, 500)); // Wait before retry
-        }
-      }
-
-      // Both attempts failed
-      TRANSLATION_API.disabledUntil = Date.now() + API_BACKOFF_DURATION;
-      sendResponse({
-        error: `Translation API failed after 1 retry and is disabled for 5 minutes. Error: ${lastError.message}`,
-      });
-    })();
-    return true;
+  } else if (request.action === "translate") {
+    const { text, targetLang } = request.payload;
+    translationQueue.push({ text, targetLang, sendResponse });
+    if (!isProcessingTranslationQueue) {
+      processTranslationQueue();
+    }
+    return true; // Required for asynchronous sendResponse
   }
   else if (
     ["done", "error", "progress", "updateStats"].includes(request.action)
@@ -284,9 +308,7 @@ chrome.runtime.onSuspend.addListener(() => {
   // Clean up any remaining timeouts
   chrome.tabs.query({}, (tabs) => {
     tabs.forEach((tab) => {
-      chrome.tabs.sendMessage(tab.id, { action: "cleanup" }).catch((e) => {
-        console.warn("Cleanup message failed for tab", tab.id, ":", e);
-      });
+      chrome.tabs.sendMessage(tab.id, { action: "cleanup" }).catch(() => {});
     });
   });
 });
