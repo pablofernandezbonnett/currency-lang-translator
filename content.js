@@ -57,6 +57,13 @@
       .substring(0, 1000);
   }
 
+  // Small error normalization helper to avoid reading .message on non-errors
+  function getErrorMessage(err) {
+    if (!err) return "Unknown error";
+    if (typeof err === "string") return err;
+    return err && err.message ? String(err.message) : String(err);
+  }
+
   // Fix async/await in getExchangeRate
   async function getExchangeRates(fromCurrencies, toCurrency) {
     if (!fromCurrencies || fromCurrencies.length === 0) return {};
@@ -113,6 +120,9 @@
 
     return rates;
   }
+
+  // getExchangeRates queries the background service worker so that
+  // all external API calls and rate limiting are centralized there.
 
   // Call at the beginning of content.js:
   if (!initializeSecurity()) {
@@ -182,7 +192,9 @@
     window.addEventListener("beforeunload", () => {
       cleanupCache();
       // Send a message to background.js to cancel ongoing translations for this tab
-      chrome.runtime.sendMessage({ action: "cancelTranslation" }).catch(() => {});
+      chrome.runtime
+        .sendMessage({ action: "cancelTranslation" })
+        .catch(() => {});
     });
   }
 
@@ -306,6 +318,14 @@
     console.log(`[API] Attempting to translate text to ${targetLang}`);
 
     try {
+      // Check user consent before sending any page text to external translation APIs.
+      // This avoids sending potentially sensitive content without explicit permission.
+      const { consentApi } = await chrome.storage.sync.get(["consentApi"]);
+      if (!consentApi) {
+        // User did not grant consent to send text to external APIs: skip translation.
+        return text;
+      }
+
       const response = await chrome.runtime.sendMessage({
         action: "translate",
         payload: { text, targetLang },
@@ -327,7 +347,7 @@
         return translation;
       }
     } catch (error) {
-      console.warn("Translation request failed:", error.message);
+      console.warn("Translation request failed:", getErrorMessage(error));
     }
 
     return text; // Return original text on any failure
@@ -515,7 +535,10 @@
           stats.translations += textsToTranslate.length;
           saveStats();
         } catch (error) {
-          console.warn("Translation batch request failed:", error.message);
+          console.warn(
+            "Translation batch request failed:",
+            getErrorMessage(error)
+          );
           // If it fails, use the combined original texts
           translatedCombinedText = combinedText;
         }
@@ -705,30 +728,72 @@
 
         // Observe all text nodes for visibility
         const allTextNodes = [];
-        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-          acceptNode: function (node) {
-            const parent = node.parentElement;
-            if (!parent) return NodeFilter.FILTER_REJECT;
-            const tagName = parent.tagName;
-            if (
-              ["SCRIPT", "STYLE", "NOSCRIPT", "IFRAME", "SVG"].includes(tagName)
-            ) {
-              return NodeFilter.FILTER_REJECT;
-            }
-            return NodeFilter.FILTER_ACCEPT;
-          },
-        });
+        const walker = document.createTreeWalker(
+          document.body,
+          NodeFilter.SHOW_TEXT,
+          {
+            acceptNode: function (node) {
+              const parent = node.parentElement;
+              if (!parent) return NodeFilter.FILTER_REJECT;
+              const tagName = parent.tagName;
+              if (
+                ["SCRIPT", "STYLE", "NOSCRIPT", "IFRAME", "SVG"].includes(
+                  tagName
+                )
+              ) {
+                return NodeFilter.FILTER_REJECT;
+              }
+              return NodeFilter.FILTER_ACCEPT;
+            },
+          }
+        );
         let node;
         while ((node = walker.nextNode())) {
           allTextNodes.push(node);
         }
 
-        allTextNodes.forEach((textNode) => {
-          if (textNode.parentNode) { // Ensure parentNode exists before observing
-            intersectionObserver.observe(textNode.parentNode);
-          }
-        });
+        // Observe a limited set of block-level ancestors instead of every text node's parent.
+        const MAX_OBSERVE = 200;
+        const observed = new Set();
 
+        // Return the nearest block-level ancestor to observe. Observing blocks
+        // (not each text node) reduces number of IntersectionObserver targets.
+        function getBlockAncestor(node) {
+          let el = node.parentElement;
+          const blockTags = new Set([
+            "ARTICLE",
+            "MAIN",
+            "SECTION",
+            "DIV",
+            "LI",
+            "P",
+            "HEADER",
+            "FOOTER",
+            "ASIDE",
+            "TD",
+            "TR",
+          ]);
+          while (el && el !== document.body) {
+            if (blockTags.has(el.tagName)) return el;
+            el = el.parentElement;
+          }
+          return document.body;
+        }
+
+        // Observe up to MAX_OBSERVE distinct block containers to limit resource usage.
+        for (const textNode of allTextNodes) {
+          if (!textNode.parentElement) continue;
+          const block = getBlockAncestor(textNode);
+          if (!block) continue;
+          const id =
+            block.__ct_id ||
+            (block.__ct_id = Math.random().toString(36).slice(2));
+          if (!observed.has(id)) {
+            observed.add(id);
+            intersectionObserver.observe(block);
+            if (observed.size >= MAX_OBSERVE) break;
+          }
+        }
 
         // Notify that it finished
         chrome.runtime.sendMessage({ action: "done" }).catch(() => {});
@@ -737,7 +802,7 @@
         chrome.runtime
           .sendMessage({
             action: "error",
-            error: error.message,
+            error: getErrorMessage(error),
           })
           .catch(() => {});
       } finally {
@@ -837,7 +902,7 @@
       chrome.runtime
         .sendMessage({
           action: "error",
-          error: `${context}: ${error.message}`,
+          error: `${context}: ${getErrorMessage(error)}`,
         })
         .catch(() => {});
       lastErrorTime = Date.now();

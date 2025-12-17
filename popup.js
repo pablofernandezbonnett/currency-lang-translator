@@ -1,4 +1,4 @@
-// Elementos del DOM
+// DOM elements (popup UI)
 const currencySelect = document.getElementById("currency");
 const languageSelect = document.getElementById("language");
 const reprocessButton = document.getElementById("reprocess");
@@ -8,6 +8,7 @@ const msgTimeoutInput = document.getElementById("msgTimeout");
 const autoProcessCheckbox = document.getElementById("autoProcess");
 const showStatsCheckbox = document.getElementById("showStats");
 const compactModeCheckbox = document.getElementById("compactMode");
+const consentCheckbox = document.getElementById("consentApi");
 const statsSection = document.getElementById("statsSection");
 const conversionsCount = document.getElementById("conversionsCount");
 const translationsCount = document.getElementById("translationsCount");
@@ -16,7 +17,7 @@ const reprocessText = document.getElementById("reprocessText");
 let statusTimeout = null;
 let stats = { conversions: 0, translations: 0 };
 
-// Enhanced storage operation with retry logic
+// Safe wrapper for storage operations with retries to handle transient errors.
 async function safeStorageOperation(operation, retries = 3) {
   for (let i = 0; i < retries; i++) {
     try {
@@ -32,7 +33,7 @@ async function safeStorageOperation(operation, retries = 3) {
   }
 }
 
-// Enhanced settings validation
+// Validate and normalize settings read from storage.
 function validateSettings(settings) {
   const defaults = {
     currency: "EUR",
@@ -41,6 +42,7 @@ function validateSettings(settings) {
     autoProcess: true,
     showStats: false,
     compactMode: false,
+    consentApi: false,
   };
 
   const allowedCurrencies = ["EUR", "USD", "GBP", "JPY", "CNY", "KRW"];
@@ -79,11 +81,15 @@ function validateSettings(settings) {
       typeof settings.compactMode === "boolean"
         ? settings.compactMode
         : defaults.compactMode,
+    consentApi:
+      typeof settings.consentApi === "boolean"
+        ? settings.consentApi
+        : defaults.consentApi,
   };
 }
 
-// Cargar configuraciones y estadísticas
-// Enhanced loadSettings function
+// Load settings and initialize UI state.
+// Uses `validateSettings` to ensure safe defaults.
 async function loadSettings() {
   try {
     const settings = await safeStorageOperation(() =>
@@ -108,18 +114,20 @@ async function loadSettings() {
     autoProcessCheckbox.checked = validatedSettings.autoProcess;
     showStatsCheckbox.checked = validatedSettings.showStats;
     compactModeCheckbox.checked = validatedSettings.compactMode;
+    if (consentCheckbox) consentCheckbox.checked = validatedSettings.consentApi;
 
     stats = settings.stats || { conversions: 0, translations: 0 };
     updateStatsDisplay();
 
     toggleStatsSection();
   } catch (error) {
+    // Log and show a friendly message on failure
     console.error("Error loading settings:", error);
     showStatus("Error loading settings", "error");
   }
 }
 
-// Guardar configuración
+// Save setting
 async function saveSetting(key, value) {
   try {
     await safeStorageOperation(() => chrome.storage.sync.set({ [key]: value }));
@@ -129,7 +137,7 @@ async function saveSetting(key, value) {
   }
 }
 
-// Actualizar display de estadísticas
+// Update stats display
 function updateStatsDisplay() {
   if (conversionsCount) {
     conversionsCount.textContent = stats?.conversions || 0;
@@ -139,14 +147,14 @@ function updateStatsDisplay() {
   }
 }
 
-// Mostrar/ocultar sección de estadísticas
+// Toggle stats section visibility
 function toggleStatsSection() {
   if (statsSection && showStatsCheckbox) {
     statsSection.style.display = showStatsCheckbox.checked ? "grid" : "none";
   }
 }
 
-// Mostrar mensaje de estado
+// Show status message
 function showStatus(msg, type = "success") {
   if (statusTimeout) {
     clearTimeout(statusTimeout);
@@ -155,7 +163,7 @@ function showStatus(msg, type = "success") {
   statusMessage.textContent = msg;
   statusMessage.className = type;
 
-  // Añadir icono de loading para procesamiento
+  // Add loading icon for processing
   if (type === "processing") {
     statusMessage.innerHTML = '<span class="loading"></span>' + msg;
   }
@@ -169,7 +177,7 @@ function showStatus(msg, type = "success") {
   });
 }
 
-// Validar y normalizar valor de timeout
+// Validate and normalize timeout value
 function validateTimeout(value) {
   let val = parseInt(value);
   if (isNaN(val) || val < 1) val = 1;
@@ -177,7 +185,7 @@ function validateTimeout(value) {
   return val;
 }
 
-// Resetear estadísticas
+// Reset statistics
 async function resetStats() {
   stats = { conversions: 0, translations: 0 };
   await saveSetting("stats", stats);
@@ -236,7 +244,16 @@ if (compactModeCheckbox) {
   });
 }
 
-// Reprocesar página activa
+if (consentCheckbox) {
+  consentCheckbox.addEventListener("change", () => {
+    saveSetting("consentApi", consentCheckbox.checked);
+    showStatus(
+      "API consent " + (consentCheckbox.checked ? "granted" : "revoked")
+    );
+  });
+}
+
+// Reprocess active page
 reprocessButton.addEventListener("click", async () => {
   if (reprocessText) {
     reprocessText.innerHTML = '<span class="loading"></span>Processing...';
@@ -246,10 +263,11 @@ reprocessButton.addEventListener("click", async () => {
   reprocessButton.disabled = true;
 
   try {
+    // Request the active tab's content script to reprocess page content.
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
 
     if (tabs[0]?.id) {
-      // Verificar si la página es procesable
+      // Verify page is processable
       const url = tabs[0].url;
       if (
         url.startsWith("chrome://") ||
@@ -265,14 +283,24 @@ reprocessButton.addEventListener("click", async () => {
       showStatus("No active tab found", "error");
     }
   } catch (error) {
-    console.error("Error reprocessing:", error.message);
-    if (error.message.includes("Receiving end does not exist")) {
+    const errMsg =
+      error && typeof error === "object" && error.message
+        ? error.message
+        : typeof error === "string"
+        ? error
+        : String(error);
+
+    console.error("Error reprocessing:", errMsg);
+    if (
+      typeof errMsg === "string" &&
+      errMsg.includes("Receiving end does not exist")
+    ) {
       showStatus(
         "Connection failed. Please reload the page and try again.",
         "error"
       );
     } else {
-      showStatus("Error: " + error.message, "error");
+      showStatus("Error: " + errMsg, "error");
     }
   } finally {
     reprocessButton.disabled = false;
@@ -282,7 +310,7 @@ reprocessButton.addEventListener("click", async () => {
   }
 });
 
-// Limpiar cache
+// Clear cache
 if (clearCacheButton) {
   clearCacheButton.addEventListener("click", async () => {
     clearCacheButton.disabled = true;
@@ -300,8 +328,18 @@ if (clearCacheButton) {
         showStatus("No active tab found", "error");
       }
     } catch (error) {
-      console.error("Error clearing cache:", error.message);
-      if (error.message.includes("Receiving end does not exist")) {
+      const errMsg =
+        error && typeof error === "object" && error.message
+          ? error.message
+          : typeof error === "string"
+          ? error
+          : String(error);
+
+      console.error("Error clearing cache:", errMsg);
+      if (
+        typeof errMsg === "string" &&
+        errMsg.includes("Receiving end does not exist")
+      ) {
         showStatus(
           "Connection failed. Please reload the page and try again.",
           "error"
@@ -315,7 +353,7 @@ if (clearCacheButton) {
   });
 }
 
-// Doble click en estadísticas para resetear
+// Double-click stats to reset
 if (statsSection) {
   statsSection.addEventListener("dblclick", () => {
     if (confirm("Reset all statistics?")) {
@@ -324,7 +362,7 @@ if (statsSection) {
   });
 }
 
-// Escuchar mensajes del content script
+// Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   switch (request.action) {
     case "done":
@@ -357,10 +395,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// Verificar disponibilidad de APIs
+// Check API availability
 async function checkAPIStatus() {
   try {
-    // Verificar una API de ejemplo
+    // Check a sample API
     const response = await fetch(
       "https://api.exchangerate.host/latest?base=USD&symbols=EUR",
       {
@@ -377,19 +415,19 @@ async function checkAPIStatus() {
   }
 }
 
-// Manejar errores no capturados
+// Handle uncaught errors
 window.addEventListener("error", (event) => {
   console.error("Popup error:", event.error);
   showStatus("Unexpected error", "error");
 });
 
-// Manejar promesas rechazadas
+// Handle unhandled promise rejections
 window.addEventListener("unhandledrejection", (event) => {
   console.error("Unhandled promise rejection:", event.reason);
   showStatus("Service error", "error");
 });
 
-// Verificar si hay tabs activos al abrir popup
+// Check active tabs when popup opens
 chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
   if (tabs.length === 0) {
     reprocessButton.disabled = true;
@@ -409,12 +447,12 @@ chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
   }
 });
 
-// Inicializar
+// Initialize
 document.addEventListener("DOMContentLoaded", () => {
   loadSettings();
   checkAPIStatus();
 
-  // Añadir tooltips
+  // Add tooltips
   if (reprocessButton) {
     reprocessButton.title = "Reprocess current page content";
   }
@@ -426,5 +464,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   if (showStatsCheckbox) {
     showStatsCheckbox.title = "Show conversion and translation statistics";
+  }
+  if (consentCheckbox) {
+    consentCheckbox.title =
+      "Allow sending page text to external translation services";
   }
 });

@@ -1,3 +1,20 @@
+// Load shared utilities
+try {
+  importScripts("utils.js");
+} catch (e) {
+  // importScripts may throw in some contexts; utils will be optional
+}
+
+// Local safe wrapper for error messages (use shared getErrorMessage if available)
+const _getErrorMessage =
+  typeof getErrorMessage === "function"
+    ? getErrorMessage
+    : (e) => {
+        if (!e) return "Unknown error";
+        if (typeof e === "string") return e;
+        return e && e.message ? String(e.message) : String(e);
+      };
+
 // Rate Limiter and Cache for Currency APIs
 class RateLimiter {
   constructor(maxRequests = 10, windowMs = 60000) {
@@ -72,9 +89,87 @@ const TRANSLATION_API = {
   disabledUntil: 0,
 };
 
-const translationQueue = [];
+let translationQueue = [];
 let isProcessingTranslationQueue = false;
 const TRANSLATION_DELAY = 1000; // 1 second delay between translation requests
+const MAX_TRANSLATION_QUEUE = 300;
+const TRANSLATION_ITEM_TTL = 2 * 60 * 1000; // 2 minutes
+
+// Persisted cache keys
+const RATE_CACHE_STORAGE_KEY = "rateCacheSnapshot";
+
+// Periodically persist rateCache to storage.local
+async function persistRateCachePeriodically() {
+  try {
+    const snapshot = [];
+    for (const [key, value] of rateCache.entries()) {
+      snapshot.push({ key, value });
+    }
+    if (typeof saveToStorage === "function") {
+      await saveToStorage({ [RATE_CACHE_STORAGE_KEY]: snapshot });
+    }
+  } catch (e) {
+    const msg =
+      typeof getErrorMessage === "function" ? getErrorMessage(e) : String(e);
+    console.warn("Failed to persist rateCache:", msg);
+  }
+}
+
+// Rehydrate rateCache from storage on startup
+async function rehydrateRateCache() {
+  // Load a previously persisted small snapshot of the rate cache
+  try {
+    let snapshot = null;
+    if (typeof loadFromStorage === "function") {
+      const stored = await loadFromStorage([RATE_CACHE_STORAGE_KEY]);
+      snapshot = stored && stored[RATE_CACHE_STORAGE_KEY];
+    }
+
+    if (Array.isArray(snapshot)) {
+      const now = Date.now();
+      for (const item of snapshot) {
+        // Only rehydrate fresh entries
+        if (
+          item &&
+          item.key &&
+          item.value &&
+          now - item.value.timestamp < CACHE_DURATION
+        ) {
+          rateCache.set(item.key, item.value);
+        }
+      }
+    }
+  } catch (e) {
+    const msg =
+      typeof getErrorMessage === "function" ? getErrorMessage(e) : String(e);
+    console.warn("Failed to rehydrate rateCache:", msg);
+  }
+}
+
+// Cleanup old items from translationQueue
+function cleanupTranslationQueue() {
+  const now = Date.now();
+  // Remove items older than TTL
+  for (let i = translationQueue.length - 1; i >= 0; i--) {
+    const item = translationQueue[i];
+    if (!item || (item.addedAt && now - item.addedAt > TRANSLATION_ITEM_TTL)) {
+      translationQueue.splice(i, 1);
+    }
+  }
+  // Trim queue if it exceeds maximum length
+  if (translationQueue.length > MAX_TRANSLATION_QUEUE) {
+    translationQueue.splice(0, translationQueue.length - MAX_TRANSLATION_QUEUE);
+  }
+}
+
+// Start periodic persistence and cleanup
+setInterval(() => {
+  persistRateCachePeriodically();
+  cleanupTranslationQueue();
+}, 60 * 1000);
+
+// Attempt to rehydrate cache immediately
+rehydrateRateCache().catch(() => {});
 
 // Handle extension updates
 chrome.runtime.onUpdateAvailable.addListener(() => {
@@ -114,7 +209,8 @@ async function processTranslationQueue() {
   isProcessingTranslationQueue = true;
 
   while (translationQueue.length > 0) {
-    const { text, targetLang, sendResponse, controller } = translationQueue.shift();
+    const { text, targetLang, sendResponse, controller } =
+      translationQueue.shift();
 
     if (!text || !text.trim()) {
       sendResponse({ translation: "" });
@@ -140,9 +236,7 @@ async function processTranslationQueue() {
         });
 
         if (!response.ok) {
-          throw new Error(
-            `API request failed with status ${response.status}`
-          );
+          throw new Error(`API request failed with status ${response.status}`);
         }
 
         const data = await response.json();
@@ -151,7 +245,7 @@ async function processTranslationQueue() {
         break; // Exit retry loop on success
       } catch (error) {
         lastError = error;
-        if (error.name === 'AbortError') {
+        if (error.name === "AbortError") {
           console.log(`Translation for "${text}" aborted.`);
           sendResponse({ error: "Translation aborted." });
           break; // Exit retry loop if aborted
@@ -160,16 +254,18 @@ async function processTranslationQueue() {
       }
     }
 
-    if (lastError && lastError.name !== 'AbortError') {
+    if (lastError && lastError.name !== "AbortError") {
       // Both attempts failed and not an abort error
       TRANSLATION_API.disabledUntil = Date.now() + API_BACKOFF_DURATION;
       sendResponse({
-        error: `Translation API failed after 1 retry and is disabled for 5 minutes. Error: ${lastError.message}`,
+        error: `Translation API failed after 1 retry and is disabled for 5 minutes. Error: ${_getErrorMessage(
+          lastError
+        )}`,
       });
     }
 
     // Add a delay before processing the next item in the queue
-    await new Promise(resolve => setTimeout(resolve, TRANSLATION_DELAY));
+    await new Promise((resolve) => setTimeout(resolve, TRANSLATION_DELAY));
   }
 
   isProcessingTranslationQueue = false;
@@ -263,7 +359,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
         api.disabledUntil = Date.now() + API_BACKOFF_DURATION;
         errors.push(
-          `${api.name} failed after 1 retry and is disabled for 5 minutes. Error: ${lastError.message}`
+          `${
+            api.name
+          } failed after 1 retry and is disabled for 5 minutes. Error: ${_getErrorMessage(
+            lastError
+          )}`
         );
       }
 
@@ -274,7 +374,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const { text, targetLang } = request.payload;
     const tabId = sender.tab ? sender.tab.id : null;
     const controller = new AbortController();
-    translationQueue.push({ text, targetLang, sendResponse, tabId, controller });
+
+    cleanupTranslationQueue();
+
+    if (translationQueue.length >= MAX_TRANSLATION_QUEUE) {
+      sendResponse({ error: "Translation queue is full. Try again later." });
+      return; // Do not keep channel open
+    }
+
+    translationQueue.push({
+      text,
+      targetLang,
+      sendResponse,
+      tabId,
+      controller,
+      addedAt: Date.now(),
+    });
     if (!isProcessingTranslationQueue) {
       processTranslationQueue();
     }
@@ -283,17 +398,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const tabIdToCancel = sender.tab ? sender.tab.id : null;
     if (tabIdToCancel) {
       // Abort any ongoing requests for the cancelled tab
-      translationQueue.forEach(req => {
+      translationQueue.forEach((req) => {
         if (req.tabId === tabIdToCancel && req.controller) {
           req.controller.abort();
         }
       });
       // Filter out requests from the cancelled tab
-      translationQueue = translationQueue.filter(req => req.tabId !== tabIdToCancel);
-      console.log(`Cancelled translation requests for tab ${tabIdToCancel}. Remaining queue size: ${translationQueue.length}`);
+      translationQueue = translationQueue.filter(
+        (req) => req.tabId !== tabIdToCancel
+      );
+      console.log(
+        `Cancelled translation requests for tab ${tabIdToCancel}. Remaining queue size: ${translationQueue.length}`
+      );
     }
-  }
-  else if (
+  } else if (
     ["done", "error", "progress", "updateStats"].includes(request.action)
   ) {
     chrome.runtime.sendMessage(request).catch(() => {});

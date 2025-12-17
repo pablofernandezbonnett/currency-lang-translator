@@ -62,6 +62,13 @@ A powerful Chrome extension that automatically converts currencies and translate
 - **Compact Display Mode**: Minimize visual impact of conversions
 - **Show Original Text**: Keep original text visible alongside translations
 
+## 🔒 Privacy & Data
+
+- **Consent required:** Translations are performed using external services (e.g., Lingva). The extension will only send page text to these services if you explicitly enable "Allow sending text to external translation APIs" in the popup settings.
+- **What is sent:** Only the text selected for translation (trimmed and sanitized) and the target language are sent to the translation API. No browsing history, cookies, or site credentials are transmitted.
+- **Local processing options:** If you revoke consent, the extension will skip sending text to external APIs and will keep the original text visible. Cached translations are stored locally in `chrome.storage.local`.
+- **Policy:** If you plan to publish this extension, include a full privacy policy URL in `manifest.json` and on your project site describing data handling in detail.
+
 ## 🎯 Usage
 
 ### Automatic Processing
@@ -250,6 +257,14 @@ Found a bug or need help?
 - Chrome extension store submission
 
 ## 🎖️ Acknowledgments
+
+## 🧰 Developer Notes
+
+- `utils.js`: small shared helpers used by the service worker and popup (error normalization and simple promisified storage helpers).
+- Cache persistence: `background.js` periodically snapshots a small `rateCache` to `chrome.storage.local` and rehydrates on startup to reduce unnecessary API requests after service worker restarts.
+- Consent: the popup offers an explicit "Allow sending text to external translation APIs" setting. When disabled, the content script will not send page text to external translation services.
+- Testing locally: load the extension in `chrome://extensions/` using "Load unpacked", open the popup and toggle consent, then visit a page and click "🔄 Process" to verify behavior.
+
 
 - **FawazAhmed0** for the excellent free currency API
 - **Lingva.ml** for open-source translation services
