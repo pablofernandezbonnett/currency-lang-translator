@@ -64,7 +64,7 @@ A powerful Chrome extension that automatically converts currencies and translate
 
 ## 🔒 Privacy & Data
 
-- **Consent required:** Translations are performed using external services (e.g., Lingva). The extension will only send page text to these services if you explicitly enable "Allow sending text to external translation APIs" in the popup settings.
+- **Consent required:** Translations are performed using external services (e.g., Lingva and MyMemory fallbacks). The extension will only send page text to these services if you explicitly enable "Allow sending text to external translation APIs" in the popup settings.
 - **What is sent:** Only the text selected for translation (trimmed and sanitized) and the target language are sent to the translation API. No browsing history, cookies, or site credentials are transmitted.
 - **Local processing options:** If you revoke consent, the extension will skip sending text to external APIs and will keep the original text visible. Cached translations are stored locally in `chrome.storage.local`.
 - **Policy:** If you plan to publish this extension, include a full privacy policy URL in `manifest.json` and on your project site describing data handling in detail.
@@ -105,6 +105,8 @@ Processed: これは美味しいコーヒーです (This is delicious coffee)
 ### Translation APIs (with fallback)
 
 1. **Lingva.ml** - Primary open-source API
+2. **Public Lingva mirrors** - Fallback endpoints compatible with the Lingva API
+3. **MyMemory** - Fallback translation API when Lingva-style endpoints fail
 
 ## 📊 Statistics & Monitoring
 
@@ -196,6 +198,8 @@ We welcome contributions! Here's how to help:
 - Add error handling for new API integrations
 - Test thoroughly across different websites
 - Update documentation for new features
+- Write repository documentation and inline code comments in English
+- If an example includes non-English text for translation purposes, explain it in English
 
 ## 📝 License
 
@@ -263,6 +267,7 @@ Found a bug or need help?
 - `utils.js`: small shared helpers used by the service worker and popup (error normalization and simple promisified storage helpers).
 - Cache persistence: `background.js` periodically snapshots a small `rateCache` to `chrome.storage.local` and rehydrates on startup to reduce unnecessary API requests after service worker restarts.
 - Consent: the popup offers an explicit "Allow sending text to external translation APIs" setting. When disabled, the content script will not send page text to external translation services.
+- Keep README content, contributor notes, and source-code comments in English for consistency.
 - Testing locally: load the extension in `chrome://extensions/` using "Load unpacked", open the popup and toggle consent, then visit a page and click "🔄 Process" to verify behavior.
 
 

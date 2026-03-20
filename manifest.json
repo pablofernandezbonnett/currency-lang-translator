@@ -9,7 +9,10 @@
   "host_permissions": [
     "https://api.frankfurter.app/*",
     "https://api.exchangerate.host/*",
-    "https://lingva.ml/*"
+    "https://lingva.ml/*",
+    "https://translate.plausibility.cloud/*",
+    "https://translate.projectsegfau.lt/*",
+    "https://api.mymemory.translated.net/*"
   ],
   "action": {
     "default_icon": {
