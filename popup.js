@@ -1,5 +1,4 @@
 const currencySelect = document.getElementById("currency");
-const languageSelect = document.getElementById("language");
 const reprocessButton = document.getElementById("reprocess");
 const clearCacheButton = document.getElementById("clearCache");
 const statusMessage = document.getElementById("statusMessage");
@@ -7,29 +6,31 @@ const msgTimeoutInput = document.getElementById("msgTimeout");
 const autoProcessCheckbox = document.getElementById("autoProcess");
 const showStatsCheckbox = document.getElementById("showStats");
 const compactModeCheckbox = document.getElementById("compactMode");
-const consentCheckbox = document.getElementById("consentApi");
 const statsSection = document.getElementById("statsSection");
 const conversionsCount = document.getElementById("conversionsCount");
-const translationsCount = document.getElementById("translationsCount");
 const reprocessText = document.getElementById("reprocessText");
 
 const DEFAULT_SETTINGS = {
   currency: "EUR",
-  language: "en",
   msgTimeout: 3,
   autoProcess: true,
   showStats: false,
   compactMode: false,
-  consentApi: false,
 };
 
 const ALLOWED_CURRENCIES = ["EUR", "USD", "GBP", "JPY", "CNY", "KRW"];
-const ALLOWED_LANGUAGES = ["en", "es", "fr", "de", "ja", "ko", "zh", "ar", "ru"];
 
 let statusTimeout = null;
-let stats = { conversions: 0, translations: 0 };
+let stats = { conversions: 0 };
 let awaitingProcessingResult = false;
 let isShowingStorageError = false;
+
+function normalizeStats(value) {
+  return {
+    conversions:
+      value && Number.isFinite(value.conversions) ? value.conversions : 0,
+  };
+}
 
 async function safeStorageOperation(operation, retries = 3) {
   for (let attempt = 0; attempt < retries; attempt += 1) {
@@ -63,9 +64,6 @@ function validateSettings(settings) {
     currency: ALLOWED_CURRENCIES.includes(settings.currency)
       ? settings.currency
       : DEFAULT_SETTINGS.currency,
-    language: ALLOWED_LANGUAGES.includes(settings.language)
-      ? settings.language
-      : DEFAULT_SETTINGS.language,
     msgTimeout: Math.max(
       1,
       Math.min(10, parseInt(settings.msgTimeout, 10) || DEFAULT_SETTINGS.msgTimeout)
@@ -82,10 +80,6 @@ function validateSettings(settings) {
       typeof settings.compactMode === "boolean"
         ? settings.compactMode
         : DEFAULT_SETTINGS.compactMode,
-    consentApi:
-      typeof settings.consentApi === "boolean"
-        ? settings.consentApi
-        : DEFAULT_SETTINGS.consentApi,
   };
 }
 
@@ -133,10 +127,6 @@ function updateStatsDisplay() {
   if (conversionsCount) {
     conversionsCount.textContent = String(stats?.conversions || 0);
   }
-
-  if (translationsCount) {
-    translationsCount.textContent = String(stats?.translations || 0);
-  }
 }
 
 function toggleStatsSection() {
@@ -181,12 +171,10 @@ async function loadSettings() {
     const settings = await safeStorageOperation(() =>
       chrome.storage.sync.get([
         "currency",
-        "language",
         "msgTimeout",
         "autoProcess",
         "showStats",
         "compactMode",
-        "consentApi",
         "stats",
       ])
     );
@@ -198,14 +186,12 @@ async function loadSettings() {
     const validated = validateSettings(settings);
 
     currencySelect.value = validated.currency;
-    languageSelect.value = validated.language;
     msgTimeoutInput.value = String(validated.msgTimeout);
     autoProcessCheckbox.checked = validated.autoProcess;
     showStatsCheckbox.checked = validated.showStats;
     compactModeCheckbox.checked = validated.compactMode;
-    consentCheckbox.checked = validated.consentApi;
 
-    stats = settings.stats || { conversions: 0, translations: 0 };
+    stats = normalizeStats(settings.stats);
     updateStatsDisplay();
     toggleStatsSection();
   } catch (error) {
@@ -215,7 +201,7 @@ async function loadSettings() {
 }
 
 async function resetStats() {
-  stats = { conversions: 0, translations: 0 };
+  stats = { conversions: 0 };
   await saveSetting("stats", stats);
   updateStatsDisplay();
   showStatus("Statistics reset");
@@ -245,11 +231,6 @@ async function updateActionAvailability() {
 currencySelect.addEventListener("change", async () => {
   await saveSetting("currency", currencySelect.value);
   showStatus("Currency updated");
-});
-
-languageSelect.addEventListener("change", async () => {
-  await saveSetting("language", languageSelect.value);
-  showStatus("Language updated");
 });
 
 msgTimeoutInput.addEventListener("change", async () => {
@@ -283,11 +264,6 @@ compactModeCheckbox.addEventListener("change", async () => {
   showStatus(
     `Compact mode ${compactModeCheckbox.checked ? "enabled" : "disabled"}`
   );
-});
-
-consentCheckbox.addEventListener("change", async () => {
-  await saveSetting("consentApi", consentCheckbox.checked);
-  showStatus(`API consent ${consentCheckbox.checked ? "granted" : "revoked"}`);
 });
 
 reprocessButton.addEventListener("click", async () => {
@@ -391,7 +367,7 @@ chrome.runtime.onMessage.addListener((request) => {
       break;
     case "updateStats":
       if (request.stats) {
-        stats = request.stats;
+        stats = normalizeStats(request.stats);
         updateStatsDisplay();
       }
       break;
@@ -414,10 +390,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadSettings();
   await updateActionAvailability();
 
-  reprocessButton.title = "Reprocess current page content";
-  clearCacheButton.title = "Clear cached rates, translations, and page markers";
-  autoProcessCheckbox.title = "Automatically process new content as it loads";
-  showStatsCheckbox.title = "Show conversion and translation statistics";
-  compactModeCheckbox.title = "Use a shorter inline display for translations and conversions";
-  consentCheckbox.title = "Allow sending page text to external translation services";
+  reprocessButton.title = "Reprocess current page prices";
+  clearCacheButton.title = "Clear cached rates and page markers";
+  autoProcessCheckbox.title = "Automatically scan new content for prices";
+  showStatsCheckbox.title = "Show conversion statistics";
+  compactModeCheckbox.title = "Use a shorter inline display for currency conversions";
 });

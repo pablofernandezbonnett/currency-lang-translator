@@ -258,8 +258,8 @@
   </head>
   <body>
     <div class="header">
-      <h1>🌐 Currency Translator</h1>
-      <div class="subtitle">Auto-convert prices & translate text</div>
+      <h1>💱 Currency Converter</h1>
+      <div class="subtitle">Auto-convert prices on supported pages</div>
     </div>
 
     <div class="container">
@@ -272,21 +272,6 @@
           <option value="JPY">JPY (¥) - Japanese Yen</option>
           <option value="CNY">CNY (¥) - Chinese Yuan</option>
           <option value="KRW">KRW (₩) - Korean Won</option>
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label for="language">🗣️ Translation Language:</label>
-        <select id="language">
-          <option value="en">English</option>
-          <option value="es">Spanish</option>
-          <option value="fr">French</option>
-          <option value="de">German</option>
-          <option value="ja">Japanese</option>
-          <option value="ko">Korean</option>
-          <option value="zh">Chinese</option>
-          <option value="ar">Arabic</option>
-          <option value="ru">Russian</option>
         </select>
       </div>
 
@@ -310,14 +295,7 @@
 
       <div class="checkbox-group">
         <input id="showStats" type="checkbox" />
-        <label for="showStats">📊 Show processing stats</label>
-      </div>
-
-      <div class="checkbox-group">
-        <input id="consentApi" type="checkbox" />
-        <label for="consentApi"
-          >Allow sending text to external translation APIs</label
-        >
+        <label for="showStats">📊 Show conversion stats</label>
       </div>
 
       <div class="divider"></div>
@@ -326,10 +304,6 @@
         <div class="stat-box">
           <div class="stat-number" id="conversionsCount">0</div>
           <div class="stat-label">Conversions</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-number" id="translationsCount">0</div>
-          <div class="stat-label">Translations</div>
         </div>
       </div>
 

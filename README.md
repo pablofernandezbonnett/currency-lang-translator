@@ -1,281 +1,103 @@
-# Currency Translator Pro 🌐💱
+# Currency Converter Pro
 
-A powerful Chrome extension that automatically converts currencies and translates text across 15+ languages with multiple fallback APIs for maximum reliability.
+Chrome Manifest V3 extension that detects prices in page text and shows inline conversions in the user's preferred currency.
 
-## ✨ Features
+The extension no longer performs text translation. Page text is not sent to translation services.
 
-### 🔄 Multi-Currency Support
+## Features
 
-- **6 Major Currencies**: USD, EUR, GBP, JPY, CNY, KRW
-- **Real-time Exchange Rates**: Fetched from multiple reliable APIs
-- **Smart Detection**: Automatically detects currency symbols (¥, $, €, £, etc.)
-- **Inline Conversion**: Shows converted prices directly next to original prices
+- Converts detected prices for `USD`, `EUR`, `GBP`, `JPY`, `CNY`, and `KRW`
+- Uses bounded caching and fallback exchange-rate providers
+- Processes pages automatically or on demand from the popup
+- Keeps the original page text intact when parsing or network requests fail
+- Tracks conversion counts in `chrome.storage.sync`
 
-### 🗣️ Multi-Language Translation
+## Privacy
 
-- **9 Languages Supported**: English, Spanish, French, German, Japanese, Korean, Chinese, Arabic, Russian
-- **Auto-Detection**: Automatically detects text language and translates when needed
-- **Contextual Translation**: Preserves original text while showing translations
+- The content script does not call external APIs directly.
+- Only exchange-rate requests are sent by `background.js`.
+- No page text is sent to external services.
+- User preferences and conversion stats are stored in `chrome.storage.sync`.
+- Exchange-rate cache snapshots are stored in `chrome.storage.local`.
 
-### 🛡️ Reliability & Performance
+## Project Structure
 
-- **Multiple Fallback APIs**: 3 currency APIs and 3 translation APIs for maximum uptime
-- **Smart Caching**: 10-minute cache system reduces API calls and improves speed
-- **Rate Limiting**: Built-in request limiting to prevent API abuse
-- **Error Handling**: Comprehensive error handling with graceful fallbacks
+- `manifest.json`: extension wiring, permissions, popup, content script, service worker
+- `content.js`: DOM scanning, price detection, and inline conversion
+- `background.js`: exchange-rate fetches, caching, alarms, and bounded cleanup
+- `popup.html` / `popup.js`: settings UI and manual actions
+- `utils.js`: small shared helpers for error handling and storage wrappers
 
-### 🎛️ Advanced Configuration
+## Settings
 
-- **Auto-Processing**: Automatically processes new content as pages load
-- **Customizable Timeouts**: Adjustable message display duration
-- **Statistics Tracking**: Monitor conversion and translation counts
-- **Cache Management**: Manual cache clearing and cleanup
+- Preferred currency
+- Message timeout
+- Auto-process on page load
+- Compact display mode
+- Show conversion stats
 
-## 🚀 Installation
+## Installation
 
-### From Chrome Web Store
+1. Clone or download this repository.
+2. Open `chrome://extensions/`.
+3. Enable Developer mode.
+4. Click `Load unpacked`.
+5. Select this project directory.
 
-1. Visit the Chrome Web Store (coming soon)
-2. Click "Add to Chrome"
-3. Follow the installation prompts
+## Usage
 
-### Manual Installation (Developer Mode)
+1. Open the popup and choose your preferred currency.
+2. Visit a page with visible prices.
+3. Let the extension process automatically, or click `Process`.
+4. Use `Clear Cache` if you want to drop cached rates and reset page markers.
 
-1. Download or clone this repository
-2. Open Chrome and navigate to `chrome://extensions/`
-3. Enable "Developer mode" in the top right
-4. Click "Load unpacked" and select the extension folder
-5. The extension will appear in your toolbar
+Example:
 
-## 🔧 Configuration
-
-### Basic Settings
-
-- **Preferred Currency**: Choose your target currency for conversions
-- **Translation Language**: Select your preferred language for translations
-- **Message Timeout**: Set how long status messages are displayed (1-10 seconds)
-
-### Advanced Options
-
-- **Process Automatically**: Enable/disable automatic processing on page load.
-- **Show Statistics**: Display conversion and translation counts
-- **Compact Display Mode**: Minimize visual impact of conversions
-- **Show Original Text**: Keep original text visible alongside translations
-
-## 🔒 Privacy & Data
-
-- **Consent required:** Translations are performed using external services (e.g., Lingva and MyMemory fallbacks). The extension will only send page text to these services if you explicitly enable "Allow sending text to external translation APIs" in the popup settings.
-- **What is sent:** Only the text selected for translation (trimmed and sanitized) and the target language are sent to the translation API. No browsing history, cookies, or site credentials are transmitted.
-- **Local processing options:** If you revoke consent, the extension will skip sending text to external APIs and will keep the original text visible. Cached translations are stored locally in `chrome.storage.local`.
-- **Policy:** If you plan to publish this extension, include a full privacy policy URL in `manifest.json` and on your project site describing data handling in detail.
-
-## 🎯 Usage
-
-### Automatic Processing
-
-1. Install and configure the extension
-2. Visit any webpage with prices or foreign text
-3. The extension automatically detects and processes content
-4. Converted prices and translations appear inline
-
-### Manual Processing
-
-1. Click the extension icon in your toolbar
-2. Disable "Process automatically on page load" if you want to control execution.
-3. Click "🔄 Process" to manually process the current page.
-4. Use "🗑️ Clear Cache" to refresh all cached data.
-
-### Example Output
-
-```
+```text
 Original: ¥1,500 for a coffee
-Processed: ¥1,500 (≈ $10.45) for a coffee
-
-Original: これは美味しいコーヒーです
-Processed: これは美味しいコーヒーです (This is delicious coffee)
+Processed: ¥1,500 (≈ €9.27) for a coffee
 ```
 
-## 🔌 API Integration
+## External APIs
 
-### Currency APIs (with fallback)
+The service worker uses these exchange-rate providers:
 
-1. **Frankfurter.app** - Primary open-source API
-2. **ExchangeRate.host** - Secondary fallback
+1. `https://api.frankfurter.app`
+2. `https://api.exchangerate.host`
 
-### Translation APIs (with fallback)
+If one provider fails, the extension falls back safely and leaves the original page text unchanged when no valid rate is available.
 
-1. **Lingva.ml** - Primary open-source API
-2. **Public Lingva mirrors** - Fallback endpoints compatible with the Lingva API
-3. **MyMemory** - Fallback translation API when Lingva-style endpoints fail
+## Development
 
-## 📊 Statistics & Monitoring
+- Plain JavaScript only
+- No bundler
+- No transpiler
+- No build step required
 
-Track your usage with built-in statistics:
+### Minimum validation
 
-- **Conversion Count**: Total currency conversions performed
-- **Translation Count**: Total text translations performed
-- **Cache Efficiency**: Monitor cache hit rates
-- **API Health**: Track API response times and failures
+Run syntax checks on the runtime files:
 
-## 🛠️ Technical Details
-
-### Architecture
-
-- **Manifest V3**: Uses the latest Chrome extension architecture
-- **Service Worker**: Efficient background processing
-- **Content Script**: Lightweight DOM manipulation
-- **Modern APIs**: Uses `fetch` with AbortSignal for timeout handling
-
-### Performance Optimizations
-
-- **WeakMap/WeakSet**: Efficient memory management for processed elements
-- **Debounced Processing**: Reduces unnecessary API calls
-- **Selective DOM Traversal**: Only processes relevant content
-- **Smart Caching**: Balances performance with data freshness
-
-### Security Features
-
-- **Content Security Policy**: Strict CSP for enhanced security
-- **Permission Scoping**: Minimal required permissions
-- **API Rate Limiting**: Prevents abuse and quota exhaustion
-- **Error Isolation**: Prevents crashes from affecting other tabs
-
-## 🔧 Development
-
-### File Structure
-
-```
-currency-translator-pro/
-├── manifest.json          # Extension configuration
-├── background.js          # Service worker
-├── content.js            # Content script
-├── popup.html            # Extension popup UI
-├── popup.js              # Popup functionality
-├── icon_16x16.png        # Extension icons
-├── icon_48x48.png
-├── icon_128x128.png
-└── README.md             # This file
+```sh
+node --check content.js
+node --check background.js
+node --check popup.js
+node --check utils.js
 ```
 
-### Building from Source
+If you change `manifest.json`, also validate that it remains valid JSON.
 
-1. Clone the repository
-2. No build process required - pure JavaScript
-3. Load in Chrome developer mode for testing
-4. Submit to Chrome Web Store for distribution
+### Manual QA
 
-### API Keys (Optional)
+Reload the unpacked extension in Chrome and verify:
 
-While the extension works with free APIs, you can add your own API keys for better rate limits:
+1. The popup opens and saves settings.
+2. `Process` works on the active tab.
+3. Currency conversion still works on a static page with prices.
+4. Currency conversion still works on a dynamic page.
+5. No obvious duplicate rewrites or processing loops appear.
+6. No errors appear in the page console or service-worker console.
 
-- Create API keys from supported services
-- Modify the API configurations in `content.js`
-- Update the fallback order as needed
+## License
 
-## 🌐 Supported Websites
-
-The extension works on all websites that contain:
-
-- **E-commerce sites**: Amazon, eBay, AliExpress, etc.
-- **News websites**: BBC, CNN, Reuters, etc.
-- **Social media**: Twitter, Facebook, Reddit, etc.
-- **Forums**: Stack Overflow, GitHub, etc.
-- **Any website**: With prices or foreign language text
-
-## 🤝 Contributing
-
-We welcome contributions! Here's how to help:
-
-1. **Fork the repository**
-2. **Create a feature branch**: `git checkout -b feature/amazing-feature`
-3. **Commit your changes**: `git commit -m 'Add amazing feature'`
-4. **Push to branch**: `git push origin feature/amazing-feature`
-5. **Open a Pull Request**
-
-### Development Guidelines
-
-- Follow existing code style and patterns
-- Add error handling for new API integrations
-- Test thoroughly across different websites
-- Update documentation for new features
-- Write repository documentation and inline code comments in English
-- If an example includes non-English text for translation purposes, explain it in English
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🐛 Bug Reports & Support
-
-Found a bug or need help?
-
-1. Check existing [GitHub Issues](https://github.com/yourusername/currency-translator-pro/issues)
-2. Create a new issue with detailed reproduction steps
-3. Include your Chrome version and extension version
-4. Provide example URLs where the issue occurs
-
-## 🔮 Roadmap
-
-### Version 1.4.0 (Coming Soon)
-
-- [ ] Cryptocurrency support (BTC, ETH, etc.)
-- [ ] Historical exchange rate charts
-- [ ] More translation languages (15 → 25)
-- [ ] Offline mode with cached rates
-
-### Version 1.5.0 (Future)
-
-- [ ] Custom API key support
-- [ ] Advanced text formatting options
-- [ ] Whitelist/blacklist for specific websites
-- [ ] Dark mode for popup interface
-
-## 📊 Version History
-
-### v1.3.0 (Current)
-
-- Enhanced error handling and fallback systems
-- Added statistics tracking and monitoring
-- Improved cache management with automatic cleanup
-- Better rate limiting and API abuse prevention
-
-### v1.2.0
-
-- Added multi-language translation support
-- Implemented smart caching system
-- Enhanced UI with better status messages
-- Added configuration options for auto-processing
-
-### v1.1.0
-
-- Multi-currency support with 6 major currencies
-- Multiple fallback APIs for reliability
-- Improved DOM processing efficiency
-- Added manual reprocessing option
-
-### v1.0.0
-
-- Initial release with basic currency conversion
-- Single API integration
-- Basic popup interface
-- Chrome extension store submission
-
-## 🎖️ Acknowledgments
-
-## 🧰 Developer Notes
-
-- `utils.js`: small shared helpers used by the service worker and popup (error normalization and simple promisified storage helpers).
-- Cache persistence: `background.js` periodically snapshots a small `rateCache` to `chrome.storage.local` and rehydrates on startup to reduce unnecessary API requests after service worker restarts.
-- Consent: the popup offers an explicit "Allow sending text to external translation APIs" setting. When disabled, the content script will not send page text to external translation services.
-- Keep README content, contributor notes, and source-code comments in English for consistency.
-- Testing locally: load the extension in `chrome://extensions/` using "Load unpacked", open the popup and toggle consent, then visit a page and click "🔄 Process" to verify behavior.
-
-
-- **FawazAhmed0** for the excellent free currency API
-- **Lingva.ml** for open-source translation services
-- **Chrome Extensions Team** for comprehensive documentation
-- **Open Source Community** for inspiration and feedback
-
----
-
-**Currency Translator Pro** - Making the web more accessible, one conversion at a time! 🌍✨
+MIT

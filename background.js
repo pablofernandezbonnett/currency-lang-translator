@@ -38,20 +38,15 @@ class RateLimiter {
 
 const DEFAULT_SETTINGS = {
   currency: "EUR",
-  language: "en",
   msgTimeout: 3,
   autoProcess: true,
   showStats: false,
   compactMode: false,
-  consentApi: false,
-  stats: { conversions: 0, translations: 0 },
+  stats: { conversions: 0 },
 };
 
 const CACHE_DURATION = 10 * 60 * 1000;
 const API_BACKOFF_DURATION = 5 * 60 * 1000;
-const TRANSLATION_DELAY = 250;
-const TRANSLATION_ITEM_TTL = 2 * 60 * 1000;
-const MAX_TRANSLATION_QUEUE = 300;
 const REQUEST_TIMEOUT_MS = 5000;
 const RATE_CACHE_STORAGE_KEY = "rateCacheSnapshot";
 const CLEAR_CACHE_ALARM_PERIOD_MINUTES = 15;
@@ -59,9 +54,6 @@ const DEEP_CLEANUP_ALARM_PERIOD_MINUTES = 60;
 
 const apiRateLimiter = new RateLimiter(15, 60000);
 const rateCache = new Map();
-let translationQueue = [];
-let isProcessingTranslationQueue = false;
-const activeTranslationRequests = new Map();
 
 const CURRENCY_APIS = [
   {
@@ -78,45 +70,6 @@ const CURRENCY_APIS = [
       `https://api.exchangerate.host/latest?base=${base.toUpperCase()}&symbols=${target.toUpperCase()}`,
     parseResponse: (data, target) =>
       data && data.rates ? data.rates[target.toUpperCase()] : null,
-    disabledUntil: 0,
-  },
-];
-
-const TRANSLATION_APIS = [
-  {
-    name: "lingva-official",
-    url: (source, target, text) =>
-      `https://lingva.ml/api/v1/${source}/${target}/${encodeURIComponent(text)}`,
-    parseResponse: (data) => data.translation,
-    disabledUntil: 0,
-  },
-  {
-    name: "lingva-plausibility",
-    url: (source, target, text) =>
-      `https://translate.plausibility.cloud/api/v1/${source}/${target}/${encodeURIComponent(text)}`,
-    parseResponse: (data) => data.translation,
-    disabledUntil: 0,
-  },
-  {
-    name: "lingva-segfault",
-    url: (source, target, text) =>
-      `https://translate.projectsegfau.lt/api/v1/${source}/${target}/${encodeURIComponent(text)}`,
-    parseResponse: (data) => data.translation,
-    disabledUntil: 0,
-  },
-  {
-    name: "mymemory",
-    requiresSourceLang: true,
-    url: (source, target, text) =>
-      `https://api.mymemory.translated.net/get?q=${encodeURIComponent(
-        text
-      )}&langpair=${encodeURIComponent(`${source}|${target}`)}&mt=1`,
-    parseResponse: (data) =>
-      data &&
-      data.responseData &&
-      typeof data.responseData.translatedText === "string"
-        ? data.responseData.translatedText
-        : null,
     disabledUntil: 0,
   },
 ];
@@ -196,28 +149,6 @@ async function rehydrateRateCache() {
     }
   } catch (error) {
     console.warn("Failed to rehydrate rate cache:", _getErrorMessage(error));
-  }
-}
-
-function cleanupTranslationQueue() {
-  const now = Date.now();
-
-  for (let index = translationQueue.length - 1; index >= 0; index -= 1) {
-    const item = translationQueue[index];
-    if (!item || (item.addedAt && now - item.addedAt > TRANSLATION_ITEM_TTL)) {
-      item?.sendResponse?.({ error: "Translation request expired." });
-      translationQueue.splice(index, 1);
-    }
-  }
-
-  if (translationQueue.length > MAX_TRANSLATION_QUEUE) {
-    const droppedItems = translationQueue.splice(
-      0,
-      translationQueue.length - MAX_TRANSLATION_QUEUE
-    );
-    droppedItems.forEach((item) => {
-      item?.sendResponse?.({ error: "Translation queue trimmed due to size limits." });
-    });
   }
 }
 
@@ -316,20 +247,6 @@ async function clearBackgroundCaches() {
     api.disabledUntil = 0;
   }
 
-  for (const api of TRANSLATION_APIS) {
-    api.disabledUntil = 0;
-  }
-
-  for (const item of translationQueue) {
-    item.controller?.abort();
-  }
-  translationQueue = [];
-
-  for (const controller of activeTranslationRequests.values()) {
-    controller.abort();
-  }
-  activeTranslationRequests.clear();
-
   if (typeof promisifyChrome === "function") {
     await promisifyChrome(chrome.storage.local.remove, RATE_CACHE_STORAGE_KEY);
   } else {
@@ -337,103 +254,8 @@ async function clearBackgroundCaches() {
   }
 }
 
-async function processTranslationQueue() {
-  if (isProcessingTranslationQueue || translationQueue.length === 0) {
-    return;
-  }
-
-  isProcessingTranslationQueue = true;
-
-  while (translationQueue.length > 0) {
-    const item = translationQueue.shift();
-    if (!item) {
-      continue;
-    }
-
-    const { text, targetLang, sourceLang, sendResponse, controller, tabId } = item;
-
-    if (!text || !text.trim()) {
-      sendResponse({ translation: "" });
-      continue;
-    }
-
-    if (typeof tabId === "number") {
-      activeTranslationRequests.set(tabId, controller);
-    }
-
-    let lastError = null;
-    let translated = false;
-
-    try {
-      const effectiveSourceLang =
-        typeof sourceLang === "string" && sourceLang ? sourceLang : "auto";
-
-      for (const api of TRANSLATION_APIS) {
-        if (Date.now() < api.disabledUntil) {
-          continue;
-        }
-
-        if (api.requiresSourceLang && effectiveSourceLang === "auto") {
-          continue;
-        }
-
-        for (let attempt = 0; attempt < 2; attempt += 1) {
-          try {
-            const url = api.url(effectiveSourceLang, targetLang, text);
-            const data = await fetchJsonWithTimeout(url, controller.signal);
-            const translation = api.parseResponse(data);
-
-            if (!translation || translation === text) {
-              throw new Error("Empty translation received");
-            }
-
-            api.disabledUntil = 0;
-            sendResponse({ translation });
-            lastError = null;
-            translated = true;
-            break;
-          } catch (error) {
-            lastError = error;
-
-            if (error.name === "AbortError") {
-              sendResponse({ error: "Translation aborted." });
-              translated = true;
-              break;
-            }
-
-            if (attempt === 0) {
-              await new Promise((resolve) => setTimeout(resolve, 300));
-            }
-          }
-        }
-
-        if (translated) {
-          break;
-        }
-
-        api.disabledUntil = Date.now() + API_BACKOFF_DURATION;
-      }
-
-      if (!translated && lastError && lastError.name !== "AbortError") {
-        sendResponse({
-          error: `All translation APIs failed. Last error: ${_getErrorMessage(lastError)}`,
-        });
-      }
-    } finally {
-      if (typeof tabId === "number") {
-        activeTranslationRequests.delete(tabId);
-      }
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, TRANSLATION_DELAY));
-  }
-
-  isProcessingTranslationQueue = false;
-}
-
 setInterval(() => {
   persistRateCache().catch(() => {});
-  cleanupTranslationQueue();
 }, 60 * 1000);
 
 rehydrateRateCache().catch(() => {});
@@ -524,57 +346,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
 
     return true;
-  }
-
-  if (request.action === "translate") {
-    const payload = request.payload || {};
-    const text = typeof payload.text === "string" ? payload.text : "";
-    const targetLang = payload.targetLang ? String(payload.targetLang) : "en";
-    const sourceLang = payload.sourceLang ? String(payload.sourceLang) : "auto";
-    const tabId = sender.tab ? sender.tab.id : null;
-    const controller = new AbortController();
-
-    cleanupTranslationQueue();
-
-    if (translationQueue.length >= MAX_TRANSLATION_QUEUE) {
-      sendResponse({ error: "Translation queue is full. Try again later." });
-      return false;
-    }
-
-    translationQueue.push({
-      text,
-      targetLang,
-      sourceLang,
-      sendResponse,
-      controller,
-      tabId,
-      addedAt: Date.now(),
-    });
-
-    processTranslationQueue().catch((error) => {
-      console.error("Translation queue error:", _getErrorMessage(error));
-    });
-
-    return true;
-  }
-
-  if (request.action === "cancelTranslation") {
-    const tabId = sender.tab ? sender.tab.id : null;
-
-    if (typeof tabId === "number") {
-      activeTranslationRequests.get(tabId)?.abort();
-
-      translationQueue = translationQueue.filter((item) => {
-        if (item.tabId === tabId) {
-          item.controller?.abort();
-          return false;
-        }
-
-        return true;
-      });
-    }
-
-    return false;
   }
 
   if (request.action === "clearBackgroundCaches") {

@@ -52,18 +52,24 @@
   let isProcessing = false;
   let mutationObserver = null;
   let processingQueue = Promise.resolve();
-  let stats = { conversions: 0, translations: 0 };
+  let stats = { conversions: 0 };
   let statsSaveTimeout = null;
   let suppressMutationsUntil = 0;
   let extensionContextInvalidated = false;
 
-  const translationCache = new Map();
   const rateCache = new Map();
 
   function getErrorMessage(error) {
     if (!error) return "Unknown error";
     if (typeof error === "string") return error;
     return error && error.message ? String(error.message) : String(error);
+  }
+
+  function normalizeStats(value) {
+    return {
+      conversions:
+        value && Number.isFinite(value.conversions) ? value.conversions : 0,
+    };
   }
 
   function isContextInvalidatedError(error) {
@@ -161,20 +167,6 @@
     return true;
   }
 
-  function sanitizeInput(text) {
-    if (!text || typeof text !== "string") {
-      return "";
-    }
-
-    return text
-      .replace(/[<>]/g, "")
-      .replace(/javascript:/gi, "")
-      .replace(/data:/gi, "")
-      .replace(/vbscript:/gi, "")
-      .replace(/on\w+=/gi, "")
-      .substring(0, 1000);
-  }
-
   function getNodeOriginalText(node) {
     return typeof node[NODE_ORIGINAL_TEXT_KEY] === "string"
       ? node[NODE_ORIGINAL_TEXT_KEY]
@@ -225,12 +217,6 @@
   function cleanupCache() {
     const now = Date.now();
 
-    for (const [key, value] of translationCache.entries()) {
-      if (now - value.timestamp > CACHE_DURATION) {
-        translationCache.delete(key);
-      }
-    }
-
     for (const [key, value] of rateCache.entries()) {
       if (now - value.timestamp > CACHE_DURATION) {
         rateCache.delete(key);
@@ -243,7 +229,6 @@
 
     window.addEventListener("beforeunload", () => {
       cleanupCache();
-      sendRuntimeMessage({ action: "cancelTranslation" });
     });
   }
 
@@ -251,7 +236,7 @@
     try {
       const result = await getSyncStorage(["stats"]);
       if (result.stats) {
-        stats = { ...stats, ...result.stats };
+        stats = normalizeStats(result.stats);
       }
     } catch (error) {
       console.warn("Error loading stats:", getErrorMessage(error));
@@ -350,68 +335,6 @@
     return requestExchangeRates(currencies, userCurrency);
   }
 
-  async function translateText(
-    text,
-    targetLang = "en",
-    consentGranted = false,
-    sourceLang = null
-  ) {
-    if (!text || text.length < 2) {
-      return text;
-    }
-
-    const sanitizedText = sanitizeInput(text);
-    if (!sanitizedText || sanitizedText.trim().length < 2) {
-      return text;
-    }
-
-    if (!consentGranted) {
-      return text;
-    }
-
-    const limitedText =
-      sanitizedText.length > 500
-        ? `${sanitizedText.substring(0, 500)}...`
-        : sanitizedText;
-
-    const cacheKey = `${limitedText}_${targetLang}`;
-    const cached = translationCache.get(cacheKey);
-
-    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-      return cached.translation;
-    }
-
-    try {
-      const response = await sendRuntimeMessage({
-        action: "translate",
-        payload: {
-          text: limitedText,
-          targetLang,
-          sourceLang: sourceLang || "auto",
-        },
-      });
-
-      if (response && response.error) {
-        throw new Error(response.error);
-      }
-
-      const translation = response && response.translation;
-      if (translation && translation !== limitedText) {
-        translationCache.set(cacheKey, {
-          translation,
-          timestamp: Date.now(),
-        });
-        stats.translations += 1;
-        saveStats();
-        return translation;
-      }
-    } catch (error) {
-      console.warn("Translation request failed:", getErrorMessage(error));
-    }
-
-    return text;
-  }
-
   function getUserCurrencySymbol(currency) {
     const symbols = {
       USD: "$",
@@ -465,64 +388,6 @@
     }
 
     return convertedText;
-  }
-
-  function detectLanguage(text) {
-    const patterns = {
-      japanese: { regex: /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, confidence: 0.3 },
-      korean: { regex: /[\uAC00-\uD7AF]/g, confidence: 0.3 },
-      chinese: { regex: /[\u4E00-\u9FFF]/g, confidence: 0.3 },
-      arabic: { regex: /[\u0600-\u06FF]/g, confidence: 0.3 },
-      russian: { regex: /[\u0400-\u04FF]/g, confidence: 0.3 },
-      thai: { regex: /[\u0E00-\u0E7F]/g, confidence: 0.3 },
-      hebrew: { regex: /[\u0590-\u05FF]/g, confidence: 0.3 },
-    };
-
-    const textLength = text.length || 1;
-
-    for (const [language, pattern] of Object.entries(patterns)) {
-      const matches = text.match(pattern.regex);
-      if (matches && matches.length / textLength > pattern.confidence) {
-        return language;
-      }
-    }
-
-    return "unknown";
-  }
-
-  function getDetectedLanguageCode(text) {
-    const languageMap = {
-      japanese: "ja",
-      korean: "ko",
-      chinese: "zh",
-      arabic: "ar",
-      russian: "ru",
-      thai: "th",
-      hebrew: "he",
-    };
-
-    return languageMap[detectLanguage(text)] || null;
-  }
-
-  function needsTranslation(text, targetLang) {
-    const detectedLanguageCode = getDetectedLanguageCode(text);
-    if (detectedLanguageCode === targetLang) {
-      return false;
-    }
-
-    return Boolean(detectedLanguageCode) && text.trim().length > 3;
-  }
-
-  function formatTranslatedText(processedText, translatedText, hasChanges, compactMode) {
-    if (!translatedText || translatedText === processedText) {
-      return processedText;
-    }
-
-    if (compactMode || hasChanges) {
-      return `${processedText} | ${translatedText}`;
-    }
-
-    return `${processedText} (${translatedText})`;
   }
 
   function walkTextNodes(root, visitor) {
@@ -622,7 +487,7 @@
       .slice(0, MAX_PROCESS_TARGETS);
   }
 
-  function prepareTextNode(node, rates, userCurrency, targetLang, compactMode) {
+  function prepareTextNode(node, rates, userCurrency, compactMode) {
     const currentText = node.nodeValue ? node.nodeValue.trim() : "";
     if (!currentText || currentText.length < 2) {
       return null;
@@ -650,22 +515,16 @@
     return {
       node,
       originalText,
-      processedText,
-      hasChanges: processedText !== originalText,
-      shouldTranslate: needsTranslation(originalText, targetLang),
-      sourceLang: getDetectedLanguageCode(originalText),
+      finalText: processedText !== originalText ? processedText : originalText,
     };
   }
 
   async function processDOM(root, options) {
-    const translationCandidates = [];
-
     walkTextNodes(root, (node) => {
       const candidate = prepareTextNode(
         node,
         options.rates,
         options.userCurrency,
-        options.targetLang,
         options.compactMode
       );
 
@@ -673,51 +532,15 @@
         return;
       }
 
-      if (candidate.shouldTranslate) {
-        translationCandidates.push(candidate);
-        return;
+      if (node.nodeValue !== candidate.finalText) {
+        node.nodeValue = candidate.finalText;
       }
 
-      const finalText = candidate.hasChanges
-        ? candidate.processedText
-        : candidate.originalText;
-
-      if (node.nodeValue !== finalText) {
-        node.nodeValue = finalText;
-      }
-
-      markNodeState(node, candidate.originalText, finalText);
+      markNodeState(node, candidate.originalText, candidate.finalText);
     });
-
-    for (const candidate of translationCandidates) {
-      const translatedText = await translateText(
-        candidate.originalText,
-        options.targetLang,
-        options.consentGranted,
-        candidate.sourceLang
-      );
-
-      const finalText =
-        translatedText && translatedText !== candidate.originalText
-          ? formatTranslatedText(
-              candidate.processedText,
-              translatedText,
-              candidate.hasChanges,
-              options.compactMode
-            )
-          : candidate.hasChanges
-          ? candidate.processedText
-          : candidate.originalText;
-
-      if (candidate.node.nodeValue !== finalText) {
-        candidate.node.nodeValue = finalText;
-      }
-
-      markNodeState(candidate.node, candidate.originalText, finalText);
-    }
   }
 
-  async function runTranslationAndConversion() {
+  async function runCurrencyConversion() {
     if (isProcessing) {
       return processingQueue;
     }
@@ -734,17 +557,10 @@
 
         await loadStats();
 
-        const settings = await getSyncStorage([
-          "currency",
-          "language",
-          "compactMode",
-          "consentApi",
-        ]);
+        const settings = await getSyncStorage(["currency", "compactMode"]);
 
         const userCurrency = settings.currency || "EUR";
-        const targetLang = settings.language || "en";
         const compactMode = settings.compactMode === true;
-        const consentGranted = settings.consentApi === true;
 
         sendRuntimeMessage({
           action: "progress",
@@ -763,15 +579,13 @@
           await processDOM(target, {
             rates,
             userCurrency,
-            targetLang,
             compactMode,
-            consentGranted,
           });
         }
 
         sendRuntimeMessage({ action: "done" });
       } catch (error) {
-        console.error("Error in runTranslationAndConversion:", error);
+        console.error("Error in runCurrencyConversion:", error);
         sendRuntimeMessage({
           action: "error",
           error: getErrorMessage(error),
@@ -808,7 +622,7 @@
     getSyncStorage(["autoProcess"])
       .then(({ autoProcess }) => {
         if (autoProcess !== false) {
-          runTranslationAndConversion();
+          runCurrencyConversion();
         }
       })
       .catch((error) => {
@@ -829,10 +643,9 @@
       case "reprocess":
         resetProcessedState({ restoreOriginal: true, clearOriginal: false });
         cleanupCache();
-        runTranslationAndConversion();
+        runCurrencyConversion();
         break;
       case "clearCache":
-        translationCache.clear();
         rateCache.clear();
         resetProcessedState({ restoreOriginal: true, clearOriginal: true });
         sendRuntimeMessage({ action: "done" });
@@ -881,7 +694,7 @@
     getSyncStorage(["autoProcess"])
       .then(({ autoProcess }) => {
         if (autoProcess !== false) {
-          runTranslationAndConversion();
+          runCurrencyConversion();
         }
       })
       .catch((error) => {
