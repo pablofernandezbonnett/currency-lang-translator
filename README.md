@@ -4,6 +4,8 @@ Chrome Manifest V3 extension that detects prices in page text and shows inline c
 
 The extension no longer performs text translation. Page text is not sent to translation services.
 
+This extension is not published on the Chrome Web Store yet, so for now it must be installed locally as an unpacked extension during development or personal use.
+
 ## Screenshots
 
 <p>
