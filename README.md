@@ -4,6 +4,20 @@ Chrome Manifest V3 extension that detects prices in page text and shows inline c
 
 The extension no longer performs text translation. Page text is not sent to translation services.
 
+## Screenshots
+
+<p>
+  <img src="docs/images/popup-showcase-cropped.png" alt="Currency Converter popup" width="360" />
+</p>
+
+Popup settings and manual actions.
+
+<p>
+  <img src="docs/images/tokyodev-inline-conversion.png" alt="Inline conversion example on TokyoDev" width="960" />
+</p>
+
+Inline salary conversion on a real page.
+
 ## Project Status
 
 This repository can be published as a public, read-only reference. Direct contributions are not expected, but forks and private modifications are allowed under the license.
