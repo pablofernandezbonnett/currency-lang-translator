@@ -4,9 +4,21 @@ Chrome Manifest V3 extension that detects prices in page text and shows inline c
 
 The extension no longer performs text translation. Page text is not sent to translation services.
 
+## Project Status
+
+This repository can be published as a public, read-only reference. Direct contributions are not expected, but forks and private modifications are allowed under the license.
+
+## Public GitHub Setup
+
+If you publish this repository publicly and want it to stay forkable but read-only for incoming contributions, use this setup:
+
+- Keep the MIT license and read-only `CONTRIBUTING.md` in the repository.
+- Disable pull requests, Issues, and Discussions in GitHub repository settings.
+- Treat forks as the supported path for independent development.
+
 ## Features
 
-- Converts detected prices for `USD`, `EUR`, `GBP`, `JPY`, `CNY`, and `KRW`
+- Converts detected prices for `USD`, `EUR`, `GBP`, `JPY`, `CNY`, and `KRW`, including compact salary notation such as `¥7.2M`
 - Uses bounded caching and fallback exchange-rate providers
 - Processes pages automatically or on demand from the popup
 - Keeps the original page text intact when parsing or network requests fail
@@ -19,6 +31,7 @@ The extension no longer performs text translation. Page text is not sent to tran
 - No page text is sent to external services.
 - User preferences and conversion stats are stored in `chrome.storage.sync`.
 - Exchange-rate cache snapshots are stored in `chrome.storage.local`.
+- The content script runs on top-level `http/https` documents and intentionally leaves embedded frames alone.
 
 ## Project Structure
 
