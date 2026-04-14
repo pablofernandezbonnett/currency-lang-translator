@@ -355,14 +355,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  if (request.action === "getSettings") {
-    chrome.storage.sync
-      .get(null)
-      .then((settings) => sendResponse(settings))
-      .catch((error) => sendResponse({ error: _getErrorMessage(error) }));
-    return true;
-  }
-
   return false;
 });
 

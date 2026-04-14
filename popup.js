@@ -9,6 +9,14 @@ const compactModeCheckbox = document.getElementById("compactMode");
 const statsSection = document.getElementById("statsSection");
 const conversionsCount = document.getElementById("conversionsCount");
 const reprocessText = document.getElementById("reprocessText");
+const resetStatsButton = document.getElementById("resetStats");
+const versionText = document.getElementById("versionText");
+const hasExtensionApis =
+  typeof chrome !== "undefined" &&
+  !!chrome.runtime?.id &&
+  !!chrome.storage?.sync &&
+  !!chrome.tabs;
+const FALLBACK_VERSION = "1.0.0";
 
 const DEFAULT_SETTINGS = {
   currency: "EUR",
@@ -105,6 +113,10 @@ function isSupportedUrl(url) {
 }
 
 async function getActiveTab() {
+  if (!hasExtensionApis) {
+    return null;
+  }
+
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   return tabs[0] || null;
 }
@@ -120,7 +132,7 @@ function setReprocessButtonLoading(isLoading) {
   }
 
   reprocessButton.disabled = isLoading;
-  reprocessText.textContent = isLoading ? "Processing..." : "🔄 Process";
+  reprocessText.textContent = isLoading ? "Processing..." : "Process";
 }
 
 function updateStatsDisplay() {
@@ -134,7 +146,12 @@ function toggleStatsSection() {
     return;
   }
 
-  statsSection.style.display = showStatsCheckbox.checked ? "grid" : "none";
+  const isVisible = showStatsCheckbox.checked;
+  statsSection.hidden = !isVisible;
+
+  if (resetStatsButton) {
+    resetStatsButton.disabled = !isVisible;
+  }
 }
 
 async function showStatus(message, type = "success") {
@@ -147,16 +164,20 @@ async function showStatus(message, type = "success") {
   }
 
   statusMessage.textContent = message;
-  statusMessage.className = type;
+  statusMessage.className = `status-message ${type}`.trim();
 
   const timeout = await getMessageTimeout();
   statusTimeout = setTimeout(() => {
     statusMessage.textContent = "";
-    statusMessage.className = "";
+    statusMessage.className = "status-message";
   }, timeout);
 }
 
 async function saveSetting(key, value) {
+  if (!hasExtensionApis) {
+    return;
+  }
+
   const result = await safeStorageOperation(() =>
     chrome.storage.sync.set({ [key]: value })
   );
@@ -167,6 +188,10 @@ async function saveSetting(key, value) {
 }
 
 async function loadSettings() {
+  if (!hasExtensionApis) {
+    return;
+  }
+
   try {
     const settings = await safeStorageOperation(() =>
       chrome.storage.sync.get([
@@ -208,6 +233,10 @@ async function resetStats() {
 }
 
 async function updateActionAvailability() {
+  if (!hasExtensionApis) {
+    return;
+  }
+
   const tab = await getActiveTab();
 
   if (!tab) {
@@ -226,6 +255,41 @@ async function updateActionAvailability() {
 
   reprocessButton.disabled = false;
   clearCacheButton.disabled = false;
+}
+
+function enablePreviewMode() {
+  [
+    currencySelect,
+    msgTimeoutInput,
+    autoProcessCheckbox,
+    showStatsCheckbox,
+    compactModeCheckbox,
+    reprocessButton,
+    clearCacheButton,
+    resetStatsButton,
+  ].forEach((element) => {
+    if (element) {
+      element.disabled = true;
+    }
+  });
+
+  showStatus(
+    "Preview only. Load this UI through the extension to use live settings.",
+    "processing"
+  );
+}
+
+function updateVersionLabel() {
+  if (!versionText) {
+    return;
+  }
+
+  const runtimeVersion =
+    hasExtensionApis && typeof chrome.runtime?.getManifest === "function"
+      ? chrome.runtime.getManifest().version
+      : FALLBACK_VERSION;
+
+  versionText.textContent = `v${runtimeVersion || FALLBACK_VERSION}`;
 }
 
 currencySelect.addEventListener("change", async () => {
@@ -342,39 +406,41 @@ clearCacheButton.addEventListener("click", async () => {
   }
 });
 
-if (statsSection) {
-  statsSection.addEventListener("dblclick", () => {
-    if (confirm("Reset all statistics?")) {
+if (resetStatsButton) {
+  resetStatsButton.addEventListener("click", () => {
+    if (confirm("Reset local conversion statistics?")) {
       resetStats();
     }
   });
 }
 
-chrome.runtime.onMessage.addListener((request) => {
-  switch (request.action) {
-    case "done":
-      awaitingProcessingResult = false;
-      setReprocessButtonLoading(false);
-      showStatus("Processing complete!", "success");
-      break;
-    case "error":
-      awaitingProcessingResult = false;
-      setReprocessButtonLoading(false);
-      showStatus(`Error: ${request.error || "Unknown error"}`, "error");
-      break;
-    case "progress":
-      showStatus(`Processing: ${request.message}`, "processing");
-      break;
-    case "updateStats":
-      if (request.stats) {
-        stats = normalizeStats(request.stats);
-        updateStatsDisplay();
-      }
-      break;
-    default:
-      break;
-  }
-});
+if (chrome.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((request) => {
+    switch (request.action) {
+      case "done":
+        awaitingProcessingResult = false;
+        setReprocessButtonLoading(false);
+        showStatus("Processing complete!", "success");
+        break;
+      case "error":
+        awaitingProcessingResult = false;
+        setReprocessButtonLoading(false);
+        showStatus(`Error: ${request.error || "Unknown error"}`, "error");
+        break;
+      case "progress":
+        showStatus(`Processing: ${request.message}`, "processing");
+        break;
+      case "updateStats":
+        if (request.stats) {
+          stats = normalizeStats(request.stats);
+          updateStatsDisplay();
+        }
+        break;
+      default:
+        break;
+    }
+  });
+}
 
 window.addEventListener("error", (event) => {
   console.error("Popup error:", event.error);
@@ -387,12 +453,25 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 document.addEventListener("DOMContentLoaded", async () => {
-  await loadSettings();
-  await updateActionAvailability();
+  updateVersionLabel();
 
   reprocessButton.title = "Reprocess current page prices";
   clearCacheButton.title = "Clear cached rates and page markers";
   autoProcessCheckbox.title = "Automatically scan new content for prices";
   showStatsCheckbox.title = "Show conversion statistics";
   compactModeCheckbox.title = "Use a shorter inline display for currency conversions";
+
+  if (resetStatsButton) {
+    resetStatsButton.title = "Reset locally stored conversion statistics";
+  }
+
+  toggleStatsSection();
+
+  if (!hasExtensionApis) {
+    enablePreviewMode();
+    return;
+  }
+
+  await loadSettings();
+  await updateActionAvailability();
 });

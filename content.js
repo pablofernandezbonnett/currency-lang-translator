@@ -6,6 +6,19 @@
   const STATS_SAVE_DEBOUNCE_MS = 3000;
   const NODE_ORIGINAL_TEXT_KEY = "__currencyTranslatorOriginalText";
   const NODE_PROCESSED_TEXT_KEY = "__currencyTranslatorProcessedText";
+  const NUMBER_PATTERN_FRAGMENT =
+    "[0-9]{1,3}(?:[,\\s]?[0-9]{3})*(?:\\.[0-9]{1,2})?";
+  const AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT =
+    `${NUMBER_PATTERN_FRAGMENT}(?:[KMB])?\\b`;
+  const DETECTED_AMOUNT_PATTERN = new RegExp(
+    `(${NUMBER_PATTERN_FRAGMENT})([KMB])?\\b`,
+    "i"
+  );
+  const COMPACT_NUMBER_MULTIPLIERS = {
+    K: 1e3,
+    M: 1e6,
+    B: 1e9,
+  };
 
   const CURRENCY_DETECTORS = {
     JPY: /(?:¥|JPY\b|円)/i,
@@ -17,12 +30,30 @@
   };
 
   const CURRENCY_PATTERNS = {
-    JPY: /(?:¥|JPY\s*)([0-9]{1,3}(?:[,\s]?[0-9]{3})*(?:\.[0-9]{1,2})?)|([0-9]{1,3}(?:[,\s]?[0-9]{3})*(?:\.[0-9]{1,2})?)\s*円/gi,
-    USD: /(?:\$|USD\s*)([0-9]{1,3}(?:[,\s]?[0-9]{3})*(?:\.[0-9]{1,2})?)/gi,
-    EUR: /(?:€|EUR\s*)([0-9]{1,3}(?:[,\s]?[0-9]{3})*(?:\.[0-9]{1,2})?)/gi,
-    GBP: /(?:£|GBP\s*)([0-9]{1,3}(?:[,\s]?[0-9]{3})*(?:\.[0-9]{1,2})?)/gi,
-    CNY: /(?:CNY\s*|RMB\s*|CN¥\s*)([0-9]{1,3}(?:[,\s]?[0-9]{3})*(?:\.[0-9]{1,2})?)/gi,
-    KRW: /(?:₩|KRW\s*)([0-9]{1,3}(?:[,\s]?[0-9]{3})*)/gi,
+    JPY: new RegExp(
+      `(?:¥|JPY\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}|${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}\\s*円`,
+      "gi"
+    ),
+    USD: new RegExp(
+      `(?:\\$|USD\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}`,
+      "gi"
+    ),
+    EUR: new RegExp(
+      `(?:€|EUR\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}`,
+      "gi"
+    ),
+    GBP: new RegExp(
+      `(?:£|GBP\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}`,
+      "gi"
+    ),
+    CNY: new RegExp(
+      `(?:CNY\\s*|RMB\\s*|CN¥\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}`,
+      "gi"
+    ),
+    KRW: new RegExp(
+      `(?:₩|KRW\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}`,
+      "gi"
+    ),
   };
 
   const BLOCK_TAGS = new Set([
@@ -355,6 +386,26 @@
       : `${match} (≈ ${convertedText})`;
   }
 
+  function parseDetectedAmount(match) {
+    const amountMatch = String(match).match(DETECTED_AMOUNT_PATTERN);
+
+    if (!amountMatch) {
+      return null;
+    }
+
+    const numericValue = parseFloat(amountMatch[1].replace(/[,\s]/g, ""));
+
+    if (!Number.isFinite(numericValue) || numericValue <= 0) {
+      return null;
+    }
+
+    const compactSuffix = amountMatch[2]
+      ? amountMatch[2].toUpperCase()
+      : "";
+
+    return numericValue * (COMPACT_NUMBER_MULTIPLIERS[compactSuffix] || 1);
+  }
+
   function convertCurrencies(text, rates, userCurrency, compactMode) {
     let convertedText = text;
     let conversionsFound = 0;
@@ -364,11 +415,10 @@
         continue;
       }
 
-      convertedText = convertedText.replace(pattern, (match, firstValue, secondValue) => {
-        const rawValue = firstValue || secondValue;
-        const numericValue = parseFloat(String(rawValue).replace(/[,\s]/g, ""));
+      convertedText = convertedText.replace(pattern, (match) => {
+        const numericValue = parseDetectedAmount(match);
 
-        if (!Number.isFinite(numericValue) || numericValue <= 0) {
+        if (!numericValue) {
           return match;
         }
 

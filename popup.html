@@ -3,40 +3,146 @@
   <head>
     <meta charset="utf-8" />
     <style>
+      :root {
+        --bg: #edf3ef;
+        --surface: #ffffff;
+        --surface-alt: #f6f8f5;
+        --ink: #18333c;
+        --muted: #5c7278;
+        --border: #d5e0da;
+        --accent: #0f766e;
+        --accent-strong: #115e59;
+        --accent-soft: #daf0eb;
+        --success: #18794e;
+        --success-soft: #e8f6ee;
+        --processing: #0b63b6;
+        --processing-soft: #e7f0fb;
+        --danger: #b42318;
+        --danger-soft: #fde8e6;
+        --shadow: 0 18px 40px rgba(24, 51, 60, 0.12);
+      }
+
       body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          sans-serif;
-        padding: 0;
+        font-family: "Avenir Next", "Helvetica Neue", "Segoe UI", sans-serif;
+        padding: 14px;
         margin: 0;
-        width: 320px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: #333;
+        width: 340px;
+        background:
+          radial-gradient(circle at top left, #f7fbf9 0, #edf3ef 46%, #e6eeea 100%);
+        color: var(--ink);
+        box-sizing: border-box;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: inherit;
+      }
+
+      .panel {
+        background: var(--surface);
+        border: 1px solid rgba(213, 224, 218, 0.9);
+        border-radius: 18px;
+        overflow: hidden;
+        box-shadow: var(--shadow);
       }
 
       .header {
-        background: rgba(255, 255, 255, 0.95);
-        padding: 20px;
-        text-align: center;
-        backdrop-filter: blur(10px);
+        position: relative;
+        padding: 18px 18px 16px;
+        background:
+          linear-gradient(135deg, rgba(15, 118, 110, 0.96), rgba(17, 94, 89, 0.9)),
+          linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent);
+        color: #f7fbfa;
+      }
+
+      .header-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .hint-wrap {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
       }
 
       .header h1 {
         margin: 0;
-        font-size: 18px;
-        color: #333;
+        font-size: 20px;
         font-weight: 600;
+        line-height: 1.2;
       }
 
-      .header .subtitle {
+      .hint-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 999px;
+        border: 1px solid rgba(247, 251, 250, 0.32);
+        background: rgba(247, 251, 250, 0.12);
+        color: #f7fbfa;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: help;
+        flex-shrink: 0;
+        padding: 0;
+      }
+
+      .hint-badge:focus-visible {
+        outline: 2px solid rgba(247, 251, 250, 0.9);
+        outline-offset: 2px;
+      }
+
+      .tooltip-bubble {
+        position: absolute;
+        top: calc(100% + 12px);
+        right: -4px;
+        width: 220px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: rgba(11, 27, 32, 0.96);
+        color: #f7fbfa;
         font-size: 12px;
-        color: #666;
-        margin-top: 4px;
+        line-height: 1.4;
+        text-align: left;
+        box-shadow: 0 18px 32px rgba(11, 27, 32, 0.24);
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(-4px);
+        transition: opacity 0.18s ease, transform 0.18s ease,
+          visibility 0.18s ease;
+        pointer-events: none;
+        z-index: 2;
+      }
+
+      .tooltip-bubble::before {
+        content: "";
+        position: absolute;
+        top: -6px;
+        right: 14px;
+        width: 12px;
+        height: 12px;
+        background: rgba(11, 27, 32, 0.96);
+        transform: rotate(45deg);
+        border-radius: 2px;
+      }
+
+      .hint-wrap:hover .tooltip-bubble,
+      .hint-wrap:focus-within .tooltip-bubble {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
       }
 
       .container {
-        background: white;
-        padding: 20px;
-        border-radius: 0;
+        padding: 18px;
       }
 
       .form-group {
@@ -47,58 +153,78 @@
         display: block;
         margin-bottom: 6px;
         font-weight: 500;
-        color: #555;
-        font-size: 14px;
+        color: var(--ink);
+        font-size: 13px;
       }
 
       select,
       input {
         width: 100%;
         padding: 10px 12px;
-        border: 2px solid #e1e5e9;
-        border-radius: 6px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
         font-size: 14px;
-        box-sizing: border-box;
-        transition: border-color 0.2s ease;
+        background: var(--surface);
+        color: var(--ink);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
       }
 
       select:focus,
       input:focus {
         outline: none;
-        border-color: #667eea;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);
       }
 
       button {
         width: 100%;
         padding: 12px;
-        border: none;
-        border-radius: 6px;
+        border: 1px solid transparent;
+        border-radius: 10px;
         font-size: 14px;
-        font-weight: 500;
+        font-weight: 600;
         cursor: pointer;
-        transition: all 0.2s ease;
-        margin-bottom: 8px;
+        transition: transform 0.18s ease, box-shadow 0.18s ease,
+          background-color 0.18s ease, border-color 0.18s ease;
       }
 
       .primary-button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(
+          135deg,
+          var(--accent) 0%,
+          var(--accent-strong) 100%
+        );
         color: white;
+        box-shadow: 0 10px 20px rgba(15, 118, 110, 0.18);
       }
 
       .primary-button:hover:not(:disabled) {
         transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        box-shadow: 0 12px 24px rgba(15, 118, 110, 0.24);
       }
 
       .secondary-button {
-        background: #f8f9fa;
-        color: #555;
-        border: 1px solid #e9ecef;
+        background: var(--surface-alt);
+        color: var(--ink);
+        border-color: var(--border);
       }
 
       .secondary-button:hover:not(:disabled) {
-        background: #e9ecef;
+        background: #edf3ef;
+      }
+
+      .tertiary-button {
+        width: auto;
+        padding: 8px 12px;
+        font-size: 12px;
+        background: transparent;
+        border-color: var(--border);
+        color: var(--muted);
+      }
+
+      .tertiary-button:hover:not(:disabled) {
+        border-color: var(--accent);
+        color: var(--accent);
       }
 
       button:disabled {
@@ -119,8 +245,9 @@
         align-items: center;
         gap: 10px;
         padding: 12px;
-        background: #f8f9fa;
-        border-radius: 6px;
+        background: var(--surface-alt);
+        border: 1px solid var(--border);
+        border-radius: 12px;
         margin-bottom: 8px;
       }
 
@@ -128,7 +255,7 @@
         width: 18px;
         height: 18px;
         margin: 0;
-        accent-color: #667eea;
+        accent-color: var(--accent);
       }
 
       .checkbox-group label {
@@ -150,173 +277,205 @@
 
       .input-group span {
         font-size: 13px;
-        color: #666;
+        color: var(--muted);
         font-weight: 500;
       }
 
-      #statusMessage {
+      .status-message {
         min-height: 20px;
         padding: 10px;
-        border-radius: 6px;
+        border: 1px solid transparent;
+        border-radius: 10px;
         font-size: 13px;
         text-align: center;
         margin-top: 16px;
         transition: all 0.3s ease;
         font-weight: 500;
+        background: var(--surface-alt);
+        color: var(--muted);
       }
 
-      #statusMessage.success {
-        background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
-        color: white;
-        box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
+      .status-message:empty {
+        padding: 0;
+        min-height: 0;
+        margin-top: 0;
+        border-width: 0;
       }
 
-      #statusMessage.error {
-        background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
-        color: white;
-        box-shadow: 0 2px 8px rgba(244, 67, 54, 0.3);
+      .status-message.success {
+        background: var(--success-soft);
+        border-color: rgba(24, 121, 78, 0.16);
+        color: var(--success);
       }
 
-      #statusMessage.processing {
-        background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
-        color: white;
-        box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
+      .status-message.error {
+        background: var(--danger-soft);
+        border-color: rgba(180, 35, 24, 0.16);
+        color: var(--danger);
+      }
+
+      .status-message.processing {
+        background: var(--processing-soft);
+        border-color: rgba(11, 99, 182, 0.16);
+        color: var(--processing);
       }
 
       .divider {
         height: 1px;
-        background: linear-gradient(90deg, transparent, #e0e0e0, transparent);
+        background: linear-gradient(90deg, transparent, var(--border), transparent);
         margin: 20px 0;
       }
 
       .stats {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
         margin-bottom: 16px;
       }
 
+      .stats[hidden] {
+        display: none;
+      }
+
       .stat-box {
-        background: #f8f9fa;
-        padding: 12px;
-        border-radius: 6px;
-        text-align: center;
-        border: 1px solid #e9ecef;
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 14px;
+        background: linear-gradient(
+          135deg,
+          rgba(15, 118, 110, 0.08),
+          rgba(15, 118, 110, 0.02)
+        );
+        padding: 14px;
+        border-radius: 12px;
+        border: 1px solid rgba(15, 118, 110, 0.12);
       }
 
       .stat-number {
-        font-size: 18px;
+        font-size: 24px;
         font-weight: 600;
-        color: #667eea;
+        color: var(--accent-strong);
       }
 
       .stat-label {
         font-size: 11px;
-        color: #666;
+        color: var(--muted);
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.08em;
+      }
+
+      .stat-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .stat-note {
+        font-size: 12px;
+        color: var(--muted);
       }
 
       .version {
         font-size: 11px;
-        color: #999;
+        color: var(--muted);
         text-align: center;
         margin-top: 12px;
-      }
-
-      @keyframes spin {
-        0% {
-          transform: rotate(0deg);
-        }
-        100% {
-          transform: rotate(360deg);
-        }
-      }
-
-      .feature-list {
-        font-size: 12px;
-        color: #666;
-        margin-top: 12px;
-        padding-left: 16px;
-      }
-
-      #reprocessText .loading {
-        display: inline-block;
-        width: 16px;
-        height: 16px;
-        border: 2px solid rgba(255, 255, 255, 0.3);
-        border-top-color: #fff;
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-        margin-right: 8px;
-      }
-
-      .feature-list li {
-        margin-bottom: 4px;
+        letter-spacing: 0.03em;
       }
     </style>
   </head>
   <body>
-    <div class="header">
-      <h1>💱 Currency Converter</h1>
-      <div class="subtitle">Auto-convert prices on supported pages</div>
-    </div>
-
-    <div class="container">
-      <div class="form-group">
-        <label for="currency">💰 Preferred Currency:</label>
-        <select id="currency">
-          <option value="EUR">EUR (€) - Euro</option>
-          <option value="USD">USD ($) - US Dollar</option>
-          <option value="GBP">GBP (£) - British Pound</option>
-          <option value="JPY">JPY (¥) - Japanese Yen</option>
-          <option value="CNY">CNY (¥) - Chinese Yuan</option>
-          <option value="KRW">KRW (₩) - Korean Won</option>
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label for="msgTimeout">⏱️ Message display time:</label>
-        <div class="input-group">
-          <input id="msgTimeout" type="number" min="1" max="10" value="3" />
-          <span>seconds</span>
+    <div class="panel">
+      <div class="header">
+        <div class="header-row">
+          <h1>Currency Converter</h1>
+          <div class="hint-wrap">
+            <button
+              class="hint-badge"
+              id="helpTooltipButton"
+              type="button"
+              aria-label="Show extension summary"
+              aria-describedby="helpTooltipBubble"
+            >
+              ?
+            </button>
+            <div class="tooltip-bubble" id="helpTooltipBubble" role="tooltip">
+              Convert detected prices inline with bounded cache and safe fallbacks.
+            </div>
+          </div>
         </div>
       </div>
 
-      <div class="checkbox-group">
-        <input id="compactMode" type="checkbox" />
-        <label for="compactMode">📱 Compact display mode</label>
-      </div>
-
-      <div class="checkbox-group">
-        <input id="autoProcess" type="checkbox" checked />
-        <label for="autoProcess">Process automatically on page load</label>
-      </div>
-
-      <div class="checkbox-group">
-        <input id="showStats" type="checkbox" />
-        <label for="showStats">📊 Show conversion stats</label>
-      </div>
-
-      <div class="divider"></div>
-
-      <div class="stats" id="statsSection" style="display: none">
-        <div class="stat-box">
-          <div class="stat-number" id="conversionsCount">0</div>
-          <div class="stat-label">Conversions</div>
+      <div class="container">
+        <div class="form-group">
+          <label for="currency">Preferred Currency</label>
+          <select id="currency">
+            <option value="EUR">EUR (€) - Euro</option>
+            <option value="USD">USD ($) - US Dollar</option>
+            <option value="GBP">GBP (£) - British Pound</option>
+            <option value="JPY">JPY (¥) - Japanese Yen</option>
+            <option value="CNY">CNY (¥) - Chinese Yuan</option>
+            <option value="KRW">KRW (₩) - Korean Won</option>
+          </select>
         </div>
+
+        <div class="form-group">
+          <label for="msgTimeout">Status Message Duration</label>
+          <div class="input-group">
+            <input id="msgTimeout" type="number" min="1" max="10" value="3" />
+            <span>seconds</span>
+          </div>
+        </div>
+
+        <div class="checkbox-group">
+          <input id="compactMode" type="checkbox" />
+          <label for="compactMode">Use compact inline conversion text</label>
+        </div>
+
+        <div class="checkbox-group">
+          <input id="autoProcess" type="checkbox" checked />
+          <label for="autoProcess">Process supported pages automatically</label>
+        </div>
+
+        <div class="checkbox-group">
+          <input id="showStats" type="checkbox" />
+          <label for="showStats">Show local conversion statistics</label>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="stats" id="statsSection" hidden>
+          <div class="stat-box">
+            <div class="stat-copy">
+              <div class="stat-label">Conversions</div>
+              <div class="stat-number" id="conversionsCount">0</div>
+              <div class="stat-note">Stored locally in chrome.storage.sync</div>
+            </div>
+            <button id="resetStats" class="tertiary-button" type="button">
+              Reset Stats
+            </button>
+          </div>
+        </div>
+
+        <div class="button-grid">
+          <button id="reprocess" class="primary-button" type="button">
+            <span id="reprocessText">Process</span>
+          </button>
+          <button id="clearCache" class="secondary-button" type="button">
+            Clear Cache
+          </button>
+        </div>
+
+        <div
+          id="statusMessage"
+          class="status-message"
+          aria-live="polite"
+          aria-atomic="true"
+        ></div>
+
+        <div class="version" id="versionText">v1.0.0</div>
       </div>
-
-      <div class="button-grid">
-        <button id="reprocess" class="primary-button">
-          <span id="reprocessText">🔄 Process</span>
-        </button>
-        <button id="clearCache" class="secondary-button">🗑️ Clear Cache</button>
-      </div>
-
-      <div id="statusMessage"></div>
-
-      <div class="version">v1.3.0 - Pro Edition</div>
     </div>
     <script src="popup.js"></script>
   </body>
