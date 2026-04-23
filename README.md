@@ -22,15 +22,19 @@ Inline salary conversion on a real page.
 
 ## Project Status
 
-This repository can be published as a public, read-only reference. Direct contributions are not expected, but forks and private modifications are allowed under the license.
+This repository is public as a read-only reference implementation.
+
+- Fork it if you want to adapt it for your own use.
+- If you want to contribute directly to this repository, ask for access first.
+- Commercial use is not allowed under the default license split.
 
 ## Public GitHub Setup
 
-If you publish this repository publicly and want it to stay forkable but read-only for incoming contributions, use this setup:
+If you want to keep the repository public, forkable, and curated:
 
-- Keep the MIT license and read-only `CONTRIBUTING.md` in the repository.
-- Disable pull requests, Issues, and Discussions in GitHub repository settings.
+- Keep `LICENSE` and `CONTRIBUTING.md` in the repository.
 - Treat forks as the supported path for independent development.
+- Handle direct collaboration by granting contributor access selectively.
 
 ## Features
 
@@ -129,4 +133,4 @@ Reload the unpacked extension in Chrome and verify:
 
 ## License
 
-MIT
+See [LICENSE](LICENSE).

@@ -1,21 +1,53 @@
-MIT License
+Licensing for this repository is split by content type.
 
-Copyright (c) 2026 PMFB
+1. Documentation and non-code content
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+All prose documentation, diagrams, notes, explanations, screenshots, icons, and other
+non-code content in this repository are licensed under:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Canonical license URL:
+https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+This means you may share and adapt that material for non-commercial purposes, as long as
+you provide attribution and keep derivative work under the same license.
+
+2. Source code, runnable assets, and embedded code examples
+
+All standalone source code files, runnable extension assets, and code snippets embedded
+in documentation are licensed under:
+
+PolyForm Noncommercial License 1.0.0
+
+Canonical license URL:
+https://polyformproject.org/licenses/noncommercial/1.0.0
+
+This means you may use, modify, and share that code for non-commercial purposes under the
+terms of that license.
+
+3. Scope rule
+
+Unless a file says otherwise:
+
+- non-code material follows CC BY-NC-SA 4.0
+- code material follows PolyForm Noncommercial 1.0.0
+
+If a file mixes explanation and code, the explanatory text follows CC BY-NC-SA 4.0 and
+the code example itself follows PolyForm Noncommercial 1.0.0.
+
+4. Commercial use
+
+Commercial use of this repository's content is not allowed under the default licensing
+terms above.
+
+5. Attribution
+
+If you reuse or adapt material from this repository where the license requires
+attribution, keep reasonable credit to the original repository and include the relevant
+license reference.
+
+6. No warranty
+
+Unless separately stated, all material is provided as-is, without warranty or guarantee
+of fitness for any purpose.
