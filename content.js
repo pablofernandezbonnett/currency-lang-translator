@@ -21,7 +21,7 @@
   };
 
   const CURRENCY_DETECTORS = {
-    JPY: /(?:¥|JPY\b|円)/i,
+    JPY: /(?:¥|￥|JPY\b|円)/i,
     USD: /(?:\$|USD\b)/i,
     EUR: /(?:€|EUR\b)/i,
     GBP: /(?:£|GBP\b)/i,
@@ -31,7 +31,7 @@
 
   const CURRENCY_PATTERNS = {
     JPY: new RegExp(
-      `(?:¥|JPY\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}|${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}\\s*円`,
+      `(?:¥|￥|JPY\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}|${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}\\s*円`,
       "gi"
     ),
     USD: new RegExp(
@@ -47,7 +47,7 @@
       "gi"
     ),
     CNY: new RegExp(
-      `(?:CNY\\s*|RMB\\s*|CN¥\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}`,
+      `(?:CNY\\s*|RMB\\s*|CN¥\\s*|人民币\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}|${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}\\s*(?:人民币|元)`,
       "gi"
     ),
     KRW: new RegExp(
@@ -448,7 +448,11 @@
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
         const parent = node.parentElement;
-        if (!parent || SKIPPED_TAGS.has(parent.tagName)) {
+        if (
+          !parent ||
+          SKIPPED_TAGS.has(parent.tagName) ||
+          parent.isContentEditable
+        ) {
           return NodeFilter.FILTER_REJECT;
         }
 
@@ -569,7 +573,7 @@
     };
   }
 
-  async function processDOM(root, options) {
+  function processDOM(root, options) {
     walkTextNodes(root, (node) => {
       const candidate = prepareTextNode(
         node,
@@ -595,8 +599,8 @@
       return processingQueue;
     }
 
-    processingQueue = processingQueue.then(async () => {
-      isProcessing = true;
+    isProcessing = true;
+    processingQueue = (async () => {
       suppressMutationHandlingFor();
 
       try {
@@ -626,7 +630,7 @@
         });
 
         for (const target of targets) {
-          await processDOM(target, {
+          processDOM(target, {
             rates,
             userCurrency,
             compactMode,
@@ -644,7 +648,7 @@
         isProcessing = false;
         suppressMutationHandlingFor();
       }
-    });
+    })();
 
     return processingQueue;
   }
@@ -684,11 +688,12 @@
     mutationObserver = new MutationObserver(debouncedProcessing);
     mutationObserver.observe(document.body, {
       childList: true,
+      characterData: true,
       subtree: true,
     });
   }
 
-  chrome.runtime.onMessage.addListener((request) => {
+  chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     switch (request.action) {
       case "reprocess":
         resetProcessedState({ restoreOriginal: true, clearOriginal: false });
@@ -700,16 +705,12 @@
         resetProcessedState({ restoreOriginal: true, clearOriginal: true });
         sendRuntimeMessage({ action: "done" });
         break;
-      case "deepCleanup":
-        cleanupCache();
-        break;
-      case "cleanup":
-        cleanupCache();
-        mutationObserver?.disconnect();
-        break;
       default:
-        break;
+        return false;
     }
+
+    sendResponse({ ok: true });
+    return false;
   });
 
   window.addEventListener("error", (event) => {

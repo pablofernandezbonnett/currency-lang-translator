@@ -1,7 +1,7 @@
 try {
   importScripts("utils.js");
 } catch (error) {
-  // `utils.js` is optional at runtime; fall back to local helpers if needed.
+  // Rate fetching can still work if the optional storage helpers are unavailable.
 }
 
 const _getErrorMessage =
@@ -49,11 +49,10 @@ const CACHE_DURATION = 10 * 60 * 1000;
 const API_BACKOFF_DURATION = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 5000;
 const RATE_CACHE_STORAGE_KEY = "rateCacheSnapshot";
-const CLEAR_CACHE_ALARM_PERIOD_MINUTES = 15;
-const DEEP_CLEANUP_ALARM_PERIOD_MINUTES = 60;
 
 const apiRateLimiter = new RateLimiter(15, 60000);
 const rateCache = new Map();
+const SUPPORTED_CURRENCIES = new Set(["USD", "EUR", "GBP", "JPY", "CNY", "KRW"]);
 
 const CURRENCY_APIS = [
   {
@@ -73,20 +72,6 @@ const CURRENCY_APIS = [
     disabledUntil: 0,
   },
 ];
-
-async function ensureAlarm(name, periodInMinutes) {
-  const alarm = await chrome.alarms.get(name);
-  if (!alarm) {
-    chrome.alarms.create(name, { periodInMinutes });
-  }
-}
-
-async function ensureRequiredAlarms() {
-  await Promise.all([
-    ensureAlarm("clearCache", CLEAR_CACHE_ALARM_PERIOD_MINUTES),
-    ensureAlarm("deepCleanup", DEEP_CLEANUP_ALARM_PERIOD_MINUTES),
-  ]);
-}
 
 async function initializeDefaultSettings() {
   const stored = await chrome.storage.sync.get(Object.keys(DEFAULT_SETTINGS));
@@ -142,6 +127,9 @@ async function rehydrateRateCache() {
         item &&
         item.key &&
         item.value &&
+        Number.isFinite(item.value.rate) &&
+        Number.isFinite(item.value.timestamp) &&
+        item.value.timestamp <= now &&
         now - item.value.timestamp < CACHE_DURATION
       ) {
         rateCache.set(item.key, item.value);
@@ -152,22 +140,11 @@ async function rehydrateRateCache() {
   }
 }
 
-async function fetchJsonWithTimeout(url, externalSignal = null) {
+async function fetchJsonWithTimeout(url) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  const abortFromExternalSignal = () => controller.abort();
 
   try {
-    if (externalSignal) {
-      if (externalSignal.aborted) {
-        controller.abort();
-      } else {
-        externalSignal.addEventListener("abort", abortFromExternalSignal, {
-          once: true,
-        });
-      }
-    }
-
     const response = await fetch(url, {
       method: "GET",
       signal: controller.signal,
@@ -179,14 +156,13 @@ async function fetchJsonWithTimeout(url, externalSignal = null) {
 
     return await response.json();
   } finally {
-    if (externalSignal) {
-      externalSignal.removeEventListener("abort", abortFromExternalSignal);
-    }
     clearTimeout(timeoutId);
   }
 }
 
 async function fetchRateForCurrency(fromCurrency, toCurrency) {
+  await rateCacheReady;
+
   const cacheKey = `${fromCurrency}_${toCurrency}`;
   const cached = rateCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
@@ -209,9 +185,8 @@ async function fetchRateForCurrency(fromCurrency, toCurrency) {
           throw new Error("Global rate limit exceeded");
         }
 
-        const controller = new AbortController();
         const url = api.url(fromCurrency, toCurrency);
-        const data = await fetchJsonWithTimeout(url, controller.signal);
+        const data = await fetchJsonWithTimeout(url);
         const rate = api.parseResponse(data, toCurrency);
 
         if (!Number.isFinite(rate) || rate <= 0) {
@@ -220,6 +195,7 @@ async function fetchRateForCurrency(fromCurrency, toCurrency) {
 
         api.disabledUntil = 0;
         rateCache.set(cacheKey, { rate, timestamp: Date.now() });
+        await persistRateCache();
         return { rate };
       } catch (error) {
         lastError = error;
@@ -241,6 +217,7 @@ async function fetchRateForCurrency(fromCurrency, toCurrency) {
 }
 
 async function clearBackgroundCaches() {
+  await rateCacheReady;
   rateCache.clear();
 
   for (const api of CURRENCY_APIS) {
@@ -254,48 +231,18 @@ async function clearBackgroundCaches() {
   }
 }
 
-setInterval(() => {
-  persistRateCache().catch(() => {});
-}, 60 * 1000);
-
-rehydrateRateCache().catch(() => {});
-ensureRequiredAlarms().catch(() => {});
+const rateCacheReady = rehydrateRateCache();
 initializeDefaultSettings().catch(() => {});
 
 chrome.runtime.onUpdateAvailable.addListener(() => {
   chrome.runtime.reload();
 });
 
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === "clearCache") {
-    clearBackgroundCaches().catch(() => {});
-    chrome.tabs.query({}, (tabs) => {
-      tabs.forEach((tab) => {
-        chrome.tabs.sendMessage(tab.id, { action: "clearCache" }).catch(() => {
-          // Ignore tabs that cannot receive extension messages.
-        });
-      });
-    });
-  }
-
-  if (alarm.name === "deepCleanup") {
-    chrome.tabs.query({}, (tabs) => {
-      tabs.forEach((tab) => {
-        chrome.tabs.sendMessage(tab.id, { action: "deepCleanup" }).catch(() => {
-          // Ignore tabs that cannot receive extension messages.
-        });
-      });
-    });
-  }
-});
-
 chrome.runtime.onStartup.addListener(() => {
-  ensureRequiredAlarms().catch(() => {});
   initializeDefaultSettings().catch(() => {});
 });
 
 chrome.runtime.onInstalled.addListener(() => {
-  ensureRequiredAlarms().catch(() => {});
   initializeDefaultSettings().catch(() => {});
 });
 
@@ -303,12 +250,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "getRates") {
     const payload = request.payload || {};
     const fromCurrencies = Array.isArray(payload.fromCurrencies)
-      ? [...new Set(payload.fromCurrencies.map((value) => String(value).toUpperCase()))]
+      ? [
+          ...new Set(
+            payload.fromCurrencies
+              .map((value) => String(value).toUpperCase())
+              .filter((currency) => SUPPORTED_CURRENCIES.has(currency))
+          ),
+        ]
       : [];
     const toCurrency = payload.toCurrency ? String(payload.toCurrency).toUpperCase() : "";
 
     (async () => {
-      if (!toCurrency || fromCurrencies.length === 0) {
+      if (!SUPPORTED_CURRENCIES.has(toCurrency) || fromCurrencies.length === 0) {
         sendResponse({ rates: {} });
         return;
       }
@@ -373,8 +326,4 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   }
 
   chrome.action.disable(tabId);
-});
-
-chrome.runtime.onSuspend.addListener(() => {
-  persistRateCache().catch(() => {});
 });

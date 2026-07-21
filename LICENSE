@@ -1,53 +1,59 @@
-Licensing for this repository is split by content type.
+# License Notice
 
-1. Documentation and non-code content
+Copyright (c) 2026 PMFB.
 
-All prose documentation, diagrams, notes, explanations, screenshots, icons, and other
-non-code content in this repository are licensed under:
+This repository uses a split license by content type. The canonical license texts
+linked below are the governing terms; this file explains how they apply here.
+
+## Documentation and visual assets
+
+All prose documentation, diagrams, notes, explanations, screenshots, and other static
+visual assets are licensed under:
 
 Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
 
 Canonical license URL:
 https://creativecommons.org/licenses/by-nc-sa/4.0/
 
-This means you may share and adapt that material for non-commercial purposes, as long as
-you provide attribution and keep derivative work under the same license.
+You may share and adapt that material for non-commercial purposes, with attribution and
+under the same license for adapted material.
 
-2. Source code, runnable assets, and embedded code examples
+## Source code and extension runtime files
 
-All standalone source code files, runnable extension assets, and code snippets embedded
-in documentation are licensed under:
+All source code, configuration, and extension runtime files are licensed under:
 
 PolyForm Noncommercial License 1.0.0
 
 Canonical license URL:
 https://polyformproject.org/licenses/noncommercial/1.0.0
 
-This means you may use, modify, and share that code for non-commercial purposes under the
-terms of that license.
+Code snippets embedded in documentation are also licensed under PolyForm
+Noncommercial 1.0.0.
 
-3. Scope rule
+## Scope and precedence
 
 Unless a file says otherwise:
 
-- non-code material follows CC BY-NC-SA 4.0
-- code material follows PolyForm Noncommercial 1.0.0
+- documentation and static visual assets follow CC BY-NC-SA 4.0
+- source code, configuration, and extension runtime files follow PolyForm
+  Noncommercial 1.0.0
 
 If a file mixes explanation and code, the explanatory text follows CC BY-NC-SA 4.0 and
-the code example itself follows PolyForm Noncommercial 1.0.0.
+the code example follows PolyForm Noncommercial 1.0.0. A file-specific license notice
+takes precedence over this default rule.
 
-4. Commercial use
+## Commercial use
 
 Commercial use of this repository's content is not allowed under the default licensing
 terms above.
 
-5. Attribution
+## Attribution
 
 If you reuse or adapt material from this repository where the license requires
 attribution, keep reasonable credit to the original repository and include the relevant
 license reference.
 
-6. No warranty
+## No warranty
 
 Unless separately stated, all material is provided as-is, without warranty or guarantee
 of fitness for any purpose.

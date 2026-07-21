@@ -414,7 +414,7 @@ if (resetStatsButton) {
   });
 }
 
-if (chrome.runtime?.onMessage) {
+if (hasExtensionApis && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener((request) => {
     switch (request.action) {
       case "done":
