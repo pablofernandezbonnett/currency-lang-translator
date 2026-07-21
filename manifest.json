@@ -5,7 +5,7 @@
   "author": "PMFB",
   "description": "Automatically converts detected prices into your preferred currency with bounded caching and safe fallbacks.",
   "homepage_url": "https://github.com/pmfb/currency-lang-translator",
-  "permissions": ["storage", "activeTab", "alarms"],
+  "permissions": ["storage", "activeTab"],
   "host_permissions": [
     "https://api.frankfurter.app/*",
     "https://api.exchangerate.host/*"

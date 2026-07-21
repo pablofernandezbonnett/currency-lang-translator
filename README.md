@@ -2,7 +2,7 @@
 
 Chrome Manifest V3 extension that detects prices in page text and shows inline conversions in the user's preferred currency.
 
-The extension no longer performs text translation. Page text is not sent to translation services.
+The extension never sends page text to an external service.
 
 This extension is not published on the Chrome Web Store yet, so for now it must be installed locally as an unpacked extension during development or personal use.
 
@@ -38,10 +38,10 @@ If you want to keep the repository public, forkable, and curated:
 
 ## Features
 
-- Converts detected prices for `USD`, `EUR`, `GBP`, `JPY`, `CNY`, and `KRW`, including compact salary notation such as `¥7.2M`
-- Uses bounded caching and fallback exchange-rate providers
+- Converts detected prices for `USD`, `EUR`, `GBP`, `JPY`, `CNY`, and `KRW`, including compact notation such as `¥7.2M`, full-width yen (`￥`), and Chinese yuan suffixes such as `99 元`
+- Uses a 10-minute in-memory cache, persisted in `chrome.storage.local` after successful rate fetches, and fallback exchange-rate providers
 - Processes pages automatically or on demand from the popup
-- Keeps the original page text intact when parsing or network requests fail
+- Keeps each unmatched amount unchanged when parsing, messaging, or rate fetching fails
 - Tracks conversion counts in `chrome.storage.sync`
 
 ## Privacy
@@ -51,13 +51,13 @@ If you want to keep the repository public, forkable, and curated:
 - No page text is sent to external services.
 - User preferences and conversion stats are stored in `chrome.storage.sync`.
 - Exchange-rate cache snapshots are stored in `chrome.storage.local`.
-- The content script runs on top-level `http/https` documents and intentionally leaves embedded frames alone.
+- The content script runs on top-level `http/https` documents, leaves embedded frames and editable fields alone, and does not use `innerHTML`.
 
 ## Project Structure
 
 - `manifest.json`: extension wiring, permissions, popup, content script, service worker
 - `content.js`: DOM scanning, price detection, and inline conversion
-- `background.js`: exchange-rate fetches, caching, alarms, and bounded cleanup
+- `background.js`: exchange-rate fetches, cache persistence, and cross-context messages
 - `popup.html` / `popup.js`: settings UI and manual actions
 - `utils.js`: small shared helpers for error handling and storage wrappers
 
@@ -82,7 +82,7 @@ If you want to keep the repository public, forkable, and curated:
 1. Open the popup and choose your preferred currency.
 2. Visit a page with visible prices.
 3. Let the extension process automatically, or click `Process`.
-4. Use `Clear Cache` if you want to drop cached rates and reset page markers.
+4. Use `Clear Cache` to drop cached rates and restore original text in the active page.
 
 Example:
 

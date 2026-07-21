@@ -37,7 +37,7 @@ The extension was converting compact salary values incorrectly because it parsed
 - `README.md`: document public read-only publication guidance and current runtime behavior.
 - `CONTRIBUTING.md`: state the no-contributions policy for the public repo.
 - `SECURITY.md`: document the security-reporting stance for a read-only reference repo.
-- `LICENSE`: add the MIT license referenced by the README.
+- `LICENSE`: add the repository's split CC BY-NC-SA / PolyForm Noncommercial licensing notice.
 - `.gitignore`: ignore `.DS_Store`.
 
 ## How to Test
