@@ -39,7 +39,7 @@ If you want to keep the repository public, forkable, and curated:
 ## Features
 
 - Converts detected prices for `USD`, `EUR`, `GBP`, `JPY`, `CNY`, and `KRW`, including compact notation such as `¥7.2M`, full-width yen (`￥`), and Chinese yuan suffixes such as `99 元`
-- Uses a 10-minute in-memory cache, persisted in `chrome.storage.local` after successful rate fetches, and fallback exchange-rate providers
+- Uses a 10-minute in-memory cache, persisted in `chrome.storage.local` after successful rate fetches
 - Processes pages automatically or on demand from the popup
 - Keeps each unmatched amount unchanged when parsing, messaging, or rate fetching fails
 - Tracks conversion counts in `chrome.storage.sync`
@@ -93,12 +93,9 @@ Processed: ¥1,500 (≈ €9.27) for a coffee
 
 ## External APIs
 
-The service worker uses these exchange-rate providers:
+The service worker retrieves rates from `https://api.frankfurter.dev/v1`.
 
-1. `https://api.frankfurter.app`
-2. `https://api.exchangerate.host`
-
-If one provider fails, the extension falls back safely and leaves the original page text unchanged when no valid rate is available.
+If the provider cannot return a valid rate, the extension leaves the original page text unchanged and shows the error after a manual process request.
 
 ## Development
 
@@ -130,6 +127,17 @@ Reload the unpacked extension in Chrome and verify:
 4. Currency conversion still works on a dynamic page.
 5. No obvious duplicate rewrites or processing loops appear.
 6. No errors appear in the page console or service-worker console.
+
+## Chrome Extension References
+
+These official Chrome guides cover the extension concepts most relevant to this project:
+
+- [Get started with Chrome Extensions](https://developer.chrome.com/docs/extensions/get-started): build, load, and distribute an extension.
+- [Manifest file format](https://developer.chrome.com/docs/extensions/reference/manifest): Manifest V3 wiring and supported configuration.
+- [Extension service worker lifecycle](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle): design background work around worker suspension and persisted state.
+- [Content scripts](https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts) and [message passing](https://developer.chrome.com/docs/extensions/develop/concepts/messaging): keep page DOM work and cross-context communication predictable.
+- [Declare permissions](https://developer.chrome.com/docs/extensions/develop/concepts/declare-permissions): keep API and host access to the minimum required.
+- [Debug extensions](https://developer.chrome.com/docs/extensions/get-started/tutorial/debug): inspect the manifest, service worker, popup, and content-script errors.
 
 ## License
 

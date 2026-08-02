@@ -4,8 +4,6 @@
   const PROCESS_DEBOUNCE_MS = 1000;
   const MAX_PROCESS_TARGETS = 200;
   const STATS_SAVE_DEBOUNCE_MS = 3000;
-  const NODE_ORIGINAL_TEXT_KEY = "__currencyTranslatorOriginalText";
-  const NODE_PROCESSED_TEXT_KEY = "__currencyTranslatorProcessedText";
   const NUMBER_PATTERN_FRAGMENT =
     "[0-9]{1,3}(?:[,\\s]?[0-9]{3})*(?:\\.[0-9]{1,2})?";
   const AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT =
@@ -76,6 +74,12 @@
     "NOSCRIPT",
     "IFRAME",
     "SVG",
+    "SELECT",
+    "OPTION",
+    "CODE",
+    "PRE",
+    "KBD",
+    "SAMP",
     "TEXTAREA",
     "INPUT",
   ]);
@@ -89,6 +93,7 @@
   let extensionContextInvalidated = false;
 
   const rateCache = new Map();
+  const nodeState = new WeakMap();
 
   function getErrorMessage(error) {
     if (!error) return "Unknown error";
@@ -117,7 +122,15 @@
     return true;
   }
 
-  function sendRuntimeMessage(message) {
+  function isMissingMessageResponseError(error) {
+    const message = getErrorMessage(error);
+    return (
+      message.includes("The message port closed before a response was received") ||
+      message.includes("Could not establish connection. Receiving end does not exist")
+    );
+  }
+
+  function sendRuntimeMessage(message, { expectResponse = true } = {}) {
     if (extensionContextInvalidated) {
       return Promise.resolve(null);
     }
@@ -128,14 +141,27 @@
           return null;
         }
 
+        if (!expectResponse && isMissingMessageResponseError(error)) {
+          return null;
+        }
+
+        if (expectResponse) {
+          throw error;
+        }
+
         console.warn("Runtime message failed:", getErrorMessage(error));
         return null;
       });
     } catch (error) {
-      if (!markContextInvalidated(error)) {
-        console.warn("Runtime message failed:", getErrorMessage(error));
+      if (markContextInvalidated(error)) {
+        return Promise.resolve(null);
       }
 
+      if (expectResponse) {
+        return Promise.reject(error);
+      }
+
+      console.warn("Runtime message failed:", getErrorMessage(error));
       return Promise.resolve(null);
     }
   }
@@ -199,20 +225,29 @@
   }
 
   function getNodeOriginalText(node) {
-    return typeof node[NODE_ORIGINAL_TEXT_KEY] === "string"
-      ? node[NODE_ORIGINAL_TEXT_KEY]
-      : null;
+    return nodeState.get(node)?.originalText ?? null;
   }
 
   function getNodeProcessedText(node) {
-    return typeof node[NODE_PROCESSED_TEXT_KEY] === "string"
-      ? node[NODE_PROCESSED_TEXT_KEY]
-      : null;
+    return nodeState.get(node)?.processedText ?? null;
   }
 
   function markNodeState(node, originalText, processedText) {
-    node[NODE_ORIGINAL_TEXT_KEY] = originalText;
-    node[NODE_PROCESSED_TEXT_KEY] = processedText;
+    nodeState.set(node, { originalText, processedText });
+  }
+
+  function clearNodeState(node, clearOriginal) {
+    const state = nodeState.get(node);
+    if (!state) {
+      return;
+    }
+
+    if (clearOriginal) {
+      nodeState.delete(node);
+      return;
+    }
+
+    nodeState.set(node, { originalText: state.originalText, processedText: null });
   }
 
   function suppressMutationHandlingFor(delayMs = PROCESS_DEBOUNCE_MS * 2) {
@@ -237,11 +272,7 @@
         node.nodeValue = originalText;
       }
 
-      delete node[NODE_PROCESSED_TEXT_KEY];
-
-      if (clearOriginal) {
-        delete node[NODE_ORIGINAL_TEXT_KEY];
-      }
+      clearNodeState(node, clearOriginal);
     });
   }
 
@@ -275,7 +306,7 @@
   }
 
   function saveStats() {
-    sendRuntimeMessage({ action: "updateStats", stats });
+    sendRuntimeMessage({ action: "updateStats", stats }, { expectResponse: false });
 
     if (statsSaveTimeout || extensionContextInvalidated) {
       return;
@@ -326,21 +357,23 @@
         payload: { fromCurrencies: currenciesToFetch, toCurrency },
       });
 
-      if (response && response.rates) {
-        for (const [currency, rate] of Object.entries(response.rates)) {
-          rateCache.set(`${currency}_${toCurrency}`, {
-            rate,
-            timestamp: Date.now(),
-          });
-          rates[currency] = rate;
-        }
+      if (!response || response.error || !response.rates) {
+        throw new Error(response?.error || "Unable to fetch exchange rates.");
       }
 
-      if (response && response.warning) {
+      for (const [currency, rate] of Object.entries(response.rates)) {
+        rateCache.set(`${currency}_${toCurrency}`, {
+          rate,
+          timestamp: Date.now(),
+        });
+        rates[currency] = rate;
+      }
+
+      if (response.warning) {
         console.warn("Exchange-rate warning:", response.warning);
       }
     } catch (error) {
-      console.warn("Failed to request exchange rates:", getErrorMessage(error));
+      throw new Error(`Failed to request exchange rates: ${getErrorMessage(error)}`);
     }
 
     return rates;
@@ -542,8 +575,9 @@
   }
 
   function prepareTextNode(node, rates, userCurrency, compactMode) {
-    const currentText = node.nodeValue ? node.nodeValue.trim() : "";
-    if (!currentText || currentText.length < 2) {
+    const currentText = node.nodeValue || "";
+    const trimmedText = currentText.trim();
+    if (!trimmedText || trimmedText.length < 2) {
       return null;
     }
 
@@ -607,7 +641,7 @@
         sendRuntimeMessage({
           action: "progress",
           message: "Loading settings...",
-        });
+        }, { expectResponse: false });
 
         await loadStats();
 
@@ -619,7 +653,7 @@
         sendRuntimeMessage({
           action: "progress",
           message: "Fetching exchange rates...",
-        });
+        }, { expectResponse: false });
 
         const rates = await getExchangeRatesForPage(userCurrency);
         const targets = collectProcessTargets();
@@ -627,7 +661,7 @@
         sendRuntimeMessage({
           action: "progress",
           message: "Processing content...",
-        });
+        }, { expectResponse: false });
 
         for (const target of targets) {
           processDOM(target, {
@@ -637,13 +671,13 @@
           });
         }
 
-        sendRuntimeMessage({ action: "done" });
+        sendRuntimeMessage({ action: "done" }, { expectResponse: false });
       } catch (error) {
         console.error("Error in runCurrencyConversion:", error);
         sendRuntimeMessage({
           action: "error",
           error: getErrorMessage(error),
-        });
+        }, { expectResponse: false });
       } finally {
         isProcessing = false;
         suppressMutationHandlingFor();
@@ -703,7 +737,6 @@
       case "clearCache":
         rateCache.clear();
         resetProcessedState({ restoreOriginal: true, clearOriginal: true });
-        sendRuntimeMessage({ action: "done" });
         break;
       default:
         return false;
