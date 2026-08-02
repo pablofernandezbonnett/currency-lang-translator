@@ -1,17 +1,4 @@
-try {
-  importScripts("utils.js");
-} catch (error) {
-  // Rate fetching can still work if the optional storage helpers are unavailable.
-}
-
-const _getErrorMessage =
-  typeof getErrorMessage === "function"
-    ? getErrorMessage
-    : (error) => {
-        if (!error) return "Unknown error";
-        if (typeof error === "string") return error;
-        return error && error.message ? String(error.message) : String(error);
-      };
+importScripts("utils.js");
 
 class RateLimiter {
   constructor(maxRequests = 10, windowMs = 60000) {
@@ -58,15 +45,7 @@ const CURRENCY_APIS = [
   {
     name: "frankfurter",
     url: (base, target) =>
-      `https://api.frankfurter.app/latest?from=${base.toUpperCase()}&to=${target.toUpperCase()}`,
-    parseResponse: (data, target) =>
-      data && data.rates ? data.rates[target.toUpperCase()] : null,
-    disabledUntil: 0,
-  },
-  {
-    name: "exchangerate.host",
-    url: (base, target) =>
-      `https://api.exchangerate.host/latest?base=${base.toUpperCase()}&symbols=${target.toUpperCase()}`,
+      `https://api.frankfurter.dev/v1/latest?from=${base.toUpperCase()}&to=${target.toUpperCase()}`,
     parseResponse: (data, target) =>
       data && data.rates ? data.rates[target.toUpperCase()] : null,
     disabledUntil: 0,
@@ -94,28 +73,16 @@ async function persistRateCache() {
       snapshot.push({ key, value });
     }
 
-    if (typeof saveToStorage === "function") {
-      await saveToStorage({ [RATE_CACHE_STORAGE_KEY]: snapshot });
-      return;
-    }
-
-    await chrome.storage.local.set({ [RATE_CACHE_STORAGE_KEY]: snapshot });
+    await saveToStorage({ [RATE_CACHE_STORAGE_KEY]: snapshot });
   } catch (error) {
-    console.warn("Failed to persist rate cache:", _getErrorMessage(error));
+    console.warn("Failed to persist rate cache:", getErrorMessage(error));
   }
 }
 
 async function rehydrateRateCache() {
   try {
-    let snapshot = null;
-
-    if (typeof loadFromStorage === "function") {
-      const stored = await loadFromStorage([RATE_CACHE_STORAGE_KEY]);
-      snapshot = stored && stored[RATE_CACHE_STORAGE_KEY];
-    } else {
-      const stored = await chrome.storage.local.get([RATE_CACHE_STORAGE_KEY]);
-      snapshot = stored && stored[RATE_CACHE_STORAGE_KEY];
-    }
+    const stored = await loadFromStorage([RATE_CACHE_STORAGE_KEY]);
+    const snapshot = stored && stored[RATE_CACHE_STORAGE_KEY];
 
     if (!Array.isArray(snapshot)) {
       return;
@@ -136,7 +103,7 @@ async function rehydrateRateCache() {
       }
     }
   } catch (error) {
-    console.warn("Failed to rehydrate rate cache:", _getErrorMessage(error));
+    console.warn("Failed to rehydrate rate cache:", getErrorMessage(error));
   }
 }
 
@@ -207,13 +174,13 @@ async function fetchRateForCurrency(fromCurrency, toCurrency) {
 
     api.disabledUntil = Date.now() + API_BACKOFF_DURATION;
     errors.push(
-      `${api.name} failed after 1 retry and is disabled for 5 minutes. Error: ${_getErrorMessage(
+      `${api.name} failed after 1 retry and is disabled for 5 minutes. Error: ${getErrorMessage(
         lastError
       )}`
     );
   }
 
-  return { error: errors.join(", ") || "All currency APIs failed." };
+  return { error: errors.join(", ") || "The exchange-rate provider failed." };
 }
 
 async function clearBackgroundCaches() {
@@ -224,26 +191,15 @@ async function clearBackgroundCaches() {
     api.disabledUntil = 0;
   }
 
-  if (typeof promisifyChrome === "function") {
-    await promisifyChrome(chrome.storage.local.remove, RATE_CACHE_STORAGE_KEY);
-  } else {
-    await chrome.storage.local.remove(RATE_CACHE_STORAGE_KEY);
-  }
+  await chrome.storage.local.remove(RATE_CACHE_STORAGE_KEY);
 }
 
 const rateCacheReady = rehydrateRateCache();
-initializeDefaultSettings().catch(() => {});
-
-chrome.runtime.onUpdateAvailable.addListener(() => {
-  chrome.runtime.reload();
-});
-
-chrome.runtime.onStartup.addListener(() => {
-  initializeDefaultSettings().catch(() => {});
-});
 
 chrome.runtime.onInstalled.addListener(() => {
-  initializeDefaultSettings().catch(() => {});
+  initializeDefaultSettings().catch((error) => {
+    console.warn("Failed to initialize default settings:", getErrorMessage(error));
+  });
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -295,7 +251,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         error: errors.join(" | ") || "Unable to fetch exchange rates.",
       });
     })().catch((error) => {
-      sendResponse({ error: _getErrorMessage(error) });
+      sendResponse({ error: getErrorMessage(error) });
     });
 
     return true;
@@ -304,7 +260,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "clearBackgroundCaches") {
     clearBackgroundCaches()
       .then(() => sendResponse({ ok: true }))
-      .catch((error) => sendResponse({ error: _getErrorMessage(error) }));
+      .catch((error) => sendResponse({ error: getErrorMessage(error) }));
     return true;
   }
 
@@ -313,17 +269,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 self.addEventListener("error", (event) => {
   console.error("Background script error:", event.error);
-});
-
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status !== "complete" || !tab.url) {
-    return;
-  }
-
-  if (tab.url.startsWith("http://") || tab.url.startsWith("https://")) {
-    chrome.action.enable(tabId);
-    return;
-  }
-
-  chrome.action.disable(tabId);
 });

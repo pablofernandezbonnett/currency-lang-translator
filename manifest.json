@@ -3,13 +3,10 @@
   "name": "Currency Converter Pro",
   "version": "1.0.0",
   "author": "PMFB",
-  "description": "Automatically converts detected prices into your preferred currency with bounded caching and safe fallbacks.",
+  "description": "Automatically converts detected prices into your preferred currency with bounded caching and safe failures.",
   "homepage_url": "https://github.com/pmfb/currency-lang-translator",
   "permissions": ["storage", "activeTab"],
-  "host_permissions": [
-    "https://api.frankfurter.app/*",
-    "https://api.exchangerate.host/*"
-  ],
+  "host_permissions": ["https://api.frankfurter.dev/*"],
   "action": {
     "default_icon": {
       "16": "icon_16x16.png",
