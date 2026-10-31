@@ -39,6 +39,9 @@ const RATE_CACHE_STORAGE_KEY = "rateCacheSnapshot";
 
 const apiRateLimiter = new RateLimiter(15, 60000);
 const rateCache = new Map();
+let cacheGeneration = 0;
+let cacheWriteQueue = Promise.resolve();
+let statsQueue = Promise.resolve();
 const SUPPORTED_CURRENCIES = new Set(["USD", "EUR", "GBP", "JPY", "CNY", "KRW"]);
 
 const CURRENCY_APIS = [
@@ -73,7 +76,11 @@ async function persistRateCache() {
       snapshot.push({ key, value });
     }
 
-    await saveToStorage({ [RATE_CACHE_STORAGE_KEY]: snapshot });
+    const write = cacheWriteQueue.then(() =>
+      saveToStorage({ [RATE_CACHE_STORAGE_KEY]: snapshot })
+    );
+    cacheWriteQueue = write.catch(() => {});
+    await write;
   } catch (error) {
     console.warn("Failed to persist rate cache:", getErrorMessage(error));
   }
@@ -95,6 +102,7 @@ async function rehydrateRateCache() {
         item.key &&
         item.value &&
         Number.isFinite(item.value.rate) &&
+        item.value.rate > 0 &&
         Number.isFinite(item.value.timestamp) &&
         item.value.timestamp <= now &&
         now - item.value.timestamp < CACHE_DURATION
@@ -129,6 +137,7 @@ async function fetchJsonWithTimeout(url) {
 
 async function fetchRateForCurrency(fromCurrency, toCurrency) {
   await rateCacheReady;
+  const generation = cacheGeneration;
 
   const cacheKey = `${fromCurrency}_${toCurrency}`;
   const cached = rateCache.get(cacheKey);
@@ -160,9 +169,11 @@ async function fetchRateForCurrency(fromCurrency, toCurrency) {
           throw new Error("Invalid rate data received");
         }
 
-        api.disabledUntil = 0;
-        rateCache.set(cacheKey, { rate, timestamp: Date.now() });
-        await persistRateCache();
+        if (generation === cacheGeneration) {
+          api.disabledUntil = 0;
+          rateCache.set(cacheKey, { rate, timestamp: Date.now() });
+          await persistRateCache();
+        }
         return { rate };
       } catch (error) {
         lastError = error;
@@ -172,7 +183,9 @@ async function fetchRateForCurrency(fromCurrency, toCurrency) {
       }
     }
 
-    api.disabledUntil = Date.now() + API_BACKOFF_DURATION;
+    if (generation === cacheGeneration) {
+      api.disabledUntil = Date.now() + API_BACKOFF_DURATION;
+    }
     errors.push(
       `${api.name} failed after 1 retry and is disabled for 5 minutes. Error: ${getErrorMessage(
         lastError
@@ -184,6 +197,7 @@ async function fetchRateForCurrency(fromCurrency, toCurrency) {
 }
 
 async function clearBackgroundCaches() {
+  cacheGeneration += 1;
   await rateCacheReady;
   rateCache.clear();
 
@@ -191,7 +205,22 @@ async function clearBackgroundCaches() {
     api.disabledUntil = 0;
   }
 
+  await cacheWriteQueue;
   await chrome.storage.local.remove(RATE_CACHE_STORAGE_KEY);
+}
+
+function updateStats(update) {
+  const operation = statsQueue.then(async () => {
+    const stored = await chrome.storage.sync.get(["stats"]);
+    const current = Number.isFinite(stored.stats?.conversions)
+      ? stored.stats.conversions
+      : 0;
+    const conversions = update(current);
+    await chrome.storage.sync.set({ stats: { conversions } });
+    return conversions;
+  });
+  statsQueue = operation.catch(() => {});
+  return operation;
 }
 
 const rateCacheReady = rehydrateRateCache();
@@ -259,6 +288,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === "clearBackgroundCaches") {
     clearBackgroundCaches()
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ error: getErrorMessage(error) }));
+    return true;
+  }
+
+  if (request.action === "incrementStats") {
+    const count = request.count;
+    if (!Number.isSafeInteger(count) || count <= 0) {
+      sendResponse({ error: "Invalid conversion count." });
+      return false;
+    }
+    updateStats((current) => current + count)
+      .then((conversions) => sendResponse({ ok: true, conversions }))
+      .catch((error) => sendResponse({ error: getErrorMessage(error) }));
+    return true;
+  }
+
+  if (request.action === "resetStats") {
+    updateStats(() => 0)
       .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ error: getErrorMessage(error) }));
     return true;

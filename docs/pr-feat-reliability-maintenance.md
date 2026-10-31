@@ -1,3 +1,5 @@
+> Historical PR draft. See [README.md](../README.md) for current extension behavior.
+
 ## PR Title
 
 `feat(extension): harden runtime lifecycle and clarify licensing`
@@ -69,8 +71,7 @@ The service-worker cleanup alarm reset converted text in every open tab when it 
 ## Risks / Trade-offs
 
 - Removing alarms means cache expiry relies on timestamp checks and content-script cleanup instead of a periodic cross-tab reset. This is safe because expired rates are never used.
-- The 200-target DOM processing cap remains unchanged; pages with many distant price blocks may require scrolling or manual processing.
-- Manual Chrome QA is still required before merge because the full extension lifecycle is not available in this workspace.
+- At the time of this PR, the 200-target cap could leave distant price blocks unprocessed. Later changes replaced it with batching.
 
 ## Backward Compatibility
 

@@ -30,8 +30,6 @@ const ALLOWED_CURRENCIES = ["EUR", "USD", "GBP", "JPY", "CNY", "KRW"];
 
 let statusTimeout = null;
 let stats = { conversions: 0 };
-let awaitingProcessingResult = false;
-let isShowingStorageError = false;
 
 function normalizeStats(value) {
   return {
@@ -51,12 +49,7 @@ async function safeStorageOperation(operation, retries = 3) {
       );
 
       if (attempt === retries - 1) {
-        if (!isShowingStorageError) {
-          isShowingStorageError = true;
-          showStatus("Storage error occurred", "error").finally(() => {
-            isShowingStorageError = false;
-          });
-        }
+        showStatus("Storage error occurred", "error");
         return null;
       }
 
@@ -121,7 +114,7 @@ async function getActiveTab() {
   return tabs[0] || null;
 }
 
-async function getMessageTimeout() {
+function getMessageTimeout() {
   const inputValue = msgTimeoutInput ? msgTimeoutInput.value : DEFAULT_SETTINGS.msgTimeout;
   return validateTimeout(inputValue ?? DEFAULT_SETTINGS.msgTimeout) * 1000;
 }
@@ -154,7 +147,7 @@ function toggleStatsSection() {
   }
 }
 
-async function showStatus(message, type = "success") {
+function showStatus(message, type = "success") {
   if (!statusMessage) {
     return;
   }
@@ -166,7 +159,7 @@ async function showStatus(message, type = "success") {
   statusMessage.textContent = message;
   statusMessage.className = `status-message ${type}`.trim();
 
-  const timeout = await getMessageTimeout();
+  const timeout = getMessageTimeout();
   statusTimeout = setTimeout(() => {
     statusMessage.textContent = "";
     statusMessage.className = "status-message";
@@ -175,7 +168,7 @@ async function showStatus(message, type = "success") {
 
 async function saveSetting(key, value) {
   if (!hasExtensionApis) {
-    return;
+    return false;
   }
 
   const result = await safeStorageOperation(() =>
@@ -184,7 +177,18 @@ async function saveSetting(key, value) {
 
   if (result === null) {
     console.error(`Failed to save setting: ${key}`);
+    return false;
   }
+  return true;
+}
+
+async function persistSetting(key, value, successMessage) {
+  if (await saveSetting(key, value)) {
+    showStatus(successMessage);
+    return;
+  }
+  await loadSettings();
+  showStatus("Setting could not be saved", "error");
 }
 
 async function loadSettings() {
@@ -226,10 +230,18 @@ async function loadSettings() {
 }
 
 async function resetStats() {
-  stats = { conversions: 0 };
-  await saveSetting("stats", stats);
-  updateStatsDisplay();
-  showStatus("Statistics reset");
+  try {
+    const response = await chrome.runtime.sendMessage({ action: "resetStats" });
+    if (!response?.ok) {
+      throw new Error(response?.error || "Unable to reset statistics.");
+    }
+    stats = { conversions: 0 };
+    updateStatsDisplay();
+    showStatus("Statistics reset");
+  } catch (error) {
+    console.error("Error resetting statistics:", error);
+    showStatus("Statistics could not be reset", "error");
+  }
 }
 
 async function updateActionAvailability() {
@@ -293,15 +305,13 @@ function updateVersionLabel() {
 }
 
 currencySelect.addEventListener("change", async () => {
-  await saveSetting("currency", currencySelect.value);
-  showStatus("Currency updated");
+  await persistSetting("currency", currencySelect.value, "Currency updated");
 });
 
 msgTimeoutInput.addEventListener("change", async () => {
   const timeout = validateTimeout(msgTimeoutInput.value);
   msgTimeoutInput.value = String(timeout);
-  await saveSetting("msgTimeout", timeout);
-  showStatus("Message timeout updated");
+  await persistSetting("msgTimeout", timeout, "Message timeout updated");
 });
 
 msgTimeoutInput.addEventListener("blur", () => {
@@ -309,29 +319,31 @@ msgTimeoutInput.addEventListener("blur", () => {
 });
 
 autoProcessCheckbox.addEventListener("change", async () => {
-  await saveSetting("autoProcess", autoProcessCheckbox.checked);
-  showStatus(
+  await persistSetting(
+    "autoProcess",
+    autoProcessCheckbox.checked,
     `Auto-process ${autoProcessCheckbox.checked ? "enabled" : "disabled"}`
   );
 });
 
 showStatsCheckbox.addEventListener("change", async () => {
-  await saveSetting("showStats", showStatsCheckbox.checked);
   toggleStatsSection();
-  showStatus(
+  await persistSetting(
+    "showStats",
+    showStatsCheckbox.checked,
     `Statistics ${showStatsCheckbox.checked ? "shown" : "hidden"}`
   );
 });
 
 compactModeCheckbox.addEventListener("change", async () => {
-  await saveSetting("compactMode", compactModeCheckbox.checked);
-  showStatus(
+  await persistSetting(
+    "compactMode",
+    compactModeCheckbox.checked,
     `Compact mode ${compactModeCheckbox.checked ? "enabled" : "disabled"}`
   );
 });
 
 reprocessButton.addEventListener("click", async () => {
-  awaitingProcessingResult = true;
   setReprocessButtonLoading(true);
   showStatus("Processing...", "processing");
 
@@ -339,20 +351,21 @@ reprocessButton.addEventListener("click", async () => {
     const tab = await getActiveTab();
 
     if (!tab || !tab.id) {
-      awaitingProcessingResult = false;
       showStatus("No active tab found", "error");
       return;
     }
 
     if (!isSupportedUrl(tab.url)) {
-      awaitingProcessingResult = false;
       showStatus("Cannot process this page", "error");
       return;
     }
 
-    await chrome.tabs.sendMessage(tab.id, { action: "reprocess" });
+    const response = await chrome.tabs.sendMessage(tab.id, { action: "reprocess" });
+    if (!response?.ok) {
+      throw new Error(response?.error || "Unable to process this page.");
+    }
+    showStatus("Processing complete!", "success");
   } catch (error) {
-    awaitingProcessingResult = false;
     const message =
       error && typeof error === "object" && error.message
         ? error.message
@@ -366,9 +379,7 @@ reprocessButton.addEventListener("click", async () => {
       showStatus(`Error: ${message}`, "error");
     }
   } finally {
-    if (!awaitingProcessingResult) {
-      setReprocessButtonLoading(false);
-    }
+    setReprocessButtonLoading(false);
   }
 });
 
@@ -380,18 +391,20 @@ clearCacheButton.addEventListener("click", async () => {
       action: "clearBackgroundCaches",
     });
 
-    if (workerResponse && workerResponse.error) {
-      throw new Error(workerResponse.error);
+    if (!workerResponse?.ok) {
+      throw new Error(workerResponse?.error || "Unable to clear rate cache.");
     }
 
     const tab = await getActiveTab();
+    let pageCleared = false;
     if (tab && tab.id && isSupportedUrl(tab.url)) {
-      await chrome.tabs.sendMessage(tab.id, { action: "clearCache" }).catch(() => {
-        // Clearing content-script state is best effort only.
-      });
+      const pageResponse = await chrome.tabs.sendMessage(tab.id, {
+        action: "clearCache",
+      }).catch(() => null);
+      pageCleared = pageResponse?.ok === true;
     }
 
-    showStatus("Caches cleared");
+    showStatus(pageCleared ? "Caches cleared" : "Rate cache cleared; reload page to reset text");
   } catch (error) {
     const message =
       error && typeof error === "object" && error.message
@@ -414,30 +427,11 @@ if (resetStatsButton) {
   });
 }
 
-if (hasExtensionApis && chrome.runtime.onMessage) {
-  chrome.runtime.onMessage.addListener((request) => {
-    switch (request.action) {
-      case "done":
-        awaitingProcessingResult = false;
-        setReprocessButtonLoading(false);
-        showStatus("Processing complete!", "success");
-        break;
-      case "error":
-        awaitingProcessingResult = false;
-        setReprocessButtonLoading(false);
-        showStatus(`Error: ${request.error || "Unknown error"}`, "error");
-        break;
-      case "progress":
-        showStatus(`Processing: ${request.message}`, "processing");
-        break;
-      case "updateStats":
-        if (request.stats) {
-          stats = normalizeStats(request.stats);
-          updateStatsDisplay();
-        }
-        break;
-      default:
-        break;
+if (hasExtensionApis && chrome.storage.onChanged) {
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === "sync" && changes.stats) {
+      stats = normalizeStats(changes.stats.newValue);
+      updateStatsDisplay();
     }
   });
 }

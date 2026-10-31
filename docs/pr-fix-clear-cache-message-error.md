@@ -1,3 +1,5 @@
+> Historical PR draft. See [README.md](../README.md) for current extension behavior.
+
 ## PR Title
 
 `fix(extension): restore cache clearing and conversion error reporting`

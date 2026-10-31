@@ -11,7 +11,7 @@ When working in this repo, robustness comes before feature creep. If something f
 - Plain JavaScript, no TypeScript, no bundler, no transpiler
 - Chrome Extension Manifest V3
 - `content.js` for reading and mutating page DOM on `http/https` pages
-- `background.js` as the service worker for network calls, rate limiting, caching, and alarms
+- `background.js` as the service worker for network calls, rate limiting, caching, and serialized statistics
 - `popup.html` + `popup.js` for manual configuration
 - `utils.js` for small shared helpers
 - `chrome.storage.sync` for user settings and stats
@@ -27,13 +27,13 @@ Do not assume missing tooling. Before proposing Vite, E2E tests, or large refact
 
 ## Repo map
 
-- [manifest.json](/Users/pmfb/Documents/coding/chrome-workspace/currency-lang-translator/manifest.json): permissions, hosts, popup, content script, and service worker
-- [content.js](/Users/pmfb/Documents/coding/chrome-workspace/currency-lang-translator/content.js): text/currency detection, observers, in-memory cache, and DOM mutation
-- [background.js](/Users/pmfb/Documents/coding/chrome-workspace/currency-lang-translator/background.js): exchange-rate fetches, persisted cache, alarms, and cross-context messaging
-- [popup.html](/Users/pmfb/Documents/coding/chrome-workspace/currency-lang-translator/popup.html): popup UI
-- [popup.js](/Users/pmfb/Documents/coding/chrome-workspace/currency-lang-translator/popup.js): settings read/write, manual actions, and feedback
-- [utils.js](/Users/pmfb/Documents/coding/chrome-workspace/currency-lang-translator/utils.js): small shared utilities
-- [README.md](/Users/pmfb/Documents/coding/chrome-workspace/currency-lang-translator/README.md): product docs, currently more ambitious than the real implementation
+- [manifest.json](manifest.json): permissions, hosts, popup, content script, and service worker
+- [content.js](content.js): text/currency detection, observers, in-memory cache, and DOM mutation
+- [background.js](background.js): exchange-rate fetches, persisted cache, serialized statistics, and cross-context messaging
+- [popup.html](popup.html): popup UI
+- [popup.js](popup.js): settings read/write, manual actions, and feedback
+- [utils.js](utils.js): small shared utilities
+- [README.md](README.md): product documentation
 
 ## Architecture rules
 
@@ -81,9 +81,10 @@ Do not assume missing tooling. Before proposing Vite, E2E tests, or large refact
 
 ## Current fragile areas
 
-- `content.js` has duplicated exchange-rate logic. A second `getExchangeRates(...)` definition overrides the first one and calls `getExchangeRate(...)`, which does not exist. Treat this as suspect number one when the extension is "failing".
-- Separation of concerns exists, but is blurry: some resilience logic is duplicated across popup, content, and background.
-- `README.md` promises more reliability and coverage than the code currently guarantees. If behavior changes, update the docs as well.
+- Currency detection is intentionally conservative. Decimal commas, period thousands groups, and prices split across DOM text nodes remain unchanged.
+- A bare `¥` is treated as JPY. Explicit `CN¥`, `CNY`, or `RMB` identifies CNY; review ambiguous symbols carefully when changing patterns.
+- Dynamic pages can replace text nodes after detection. Apply conversions only when the node still contains the text that was examined, and restore original text only when it still matches the extension's output.
+- Keep `README.md` aligned with observed behavior and limitations whenever conversion rules change.
 
 ## Recommended work flow
 
@@ -170,7 +171,7 @@ Test at least:
 
 - Centralize fetch, cache, retries, and backoff here.
 - Any new timeout or retry must be bounded.
-- If you change caches or alarms, think about worker suspension and safe recovery.
+- If you change caches or statistics, think about worker suspension and safe recovery.
 
 ### `popup.js` and `popup.html`
 
