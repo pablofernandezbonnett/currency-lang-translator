@@ -1,15 +1,14 @@
 (async () => {
   const CACHE_DURATION = 10 * 60 * 1000;
-  const CLEANUP_INTERVAL = 5 * 60 * 1000;
-  const PROCESS_DEBOUNCE_MS = 1000;
+  const PROCESS_DELAY_MS = 1000;
   const MAX_PROCESS_TARGETS = 200;
-  const STATS_SAVE_DEBOUNCE_MS = 3000;
+  const MAX_DIRTY_ROOTS = 200;
   const NUMBER_PATTERN_FRAGMENT =
-    "[0-9]{1,3}(?:[,\\s]?[0-9]{3})*(?:\\.[0-9]{1,2})?";
+    "(?:[0-9]{1,3}(?:[,\\s][0-9]{3})+|[0-9]+)(?:\\.[0-9]{1,2})?";
   const AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT =
-    `${NUMBER_PATTERN_FRAGMENT}(?:[KMB])?\\b`;
+    `${NUMBER_PATTERN_FRAGMENT}(?:[KMB])?(?![\\w.,]|\\s+[0-9])`;
   const DETECTED_AMOUNT_PATTERN = new RegExp(
-    `(${NUMBER_PATTERN_FRAGMENT})([KMB])?\\b`,
+    `(${NUMBER_PATTERN_FRAGMENT})([KMB])?(?![\\w.,]|\\s+[0-9])`,
     "i"
   );
   const COMPACT_NUMBER_MULTIPLIERS = {
@@ -18,18 +17,13 @@
     B: 1e9,
   };
 
-  const CURRENCY_DETECTORS = {
-    JPY: /(?:¥|￥|JPY\b|円)/i,
-    USD: /(?:\$|USD\b)/i,
-    EUR: /(?:€|EUR\b)/i,
-    GBP: /(?:£|GBP\b)/i,
-    CNY: /(?:CNY\b|RMB\b|CN¥|人民币|元)/i,
-    KRW: /(?:₩|KRW\b)/i,
-  };
-
   const CURRENCY_PATTERNS = {
+    CNY: new RegExp(
+      `(?:CNY\\s*¥?\\s*|RMB\\s*¥?\\s*|CN[¥￥]\\s*|人民币\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}|${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}\\s*(?:人民币|元)`,
+      "gi"
+    ),
     JPY: new RegExp(
-      `(?:¥|￥|JPY\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}|${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}\\s*円`,
+      `(?:(?<!CN)¥|￥|JPY\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}|${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}\\s*円`,
       "gi"
     ),
     USD: new RegExp(
@@ -44,29 +38,11 @@
       `(?:£|GBP\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}`,
       "gi"
     ),
-    CNY: new RegExp(
-      `(?:CNY\\s*|RMB\\s*|CN¥\\s*|人民币\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}|${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}\\s*(?:人民币|元)`,
-      "gi"
-    ),
     KRW: new RegExp(
       `(?:₩|KRW\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}`,
       "gi"
     ),
   };
-
-  const BLOCK_TAGS = new Set([
-    "ARTICLE",
-    "ASIDE",
-    "DIV",
-    "FOOTER",
-    "HEADER",
-    "LI",
-    "MAIN",
-    "P",
-    "SECTION",
-    "TD",
-    "TR",
-  ]);
 
   const SKIPPED_TAGS = new Set([
     "SCRIPT",
@@ -87,25 +63,19 @@
   let isProcessing = false;
   let mutationObserver = null;
   let processingQueue = Promise.resolve();
-  let stats = { conversions: 0 };
-  let statsSaveTimeout = null;
-  let suppressMutationsUntil = 0;
+  let pendingProcessing = false;
+  let fullScanPending = true;
+  let stateVersion = 0;
   let extensionContextInvalidated = false;
 
   const rateCache = new Map();
   const nodeState = new WeakMap();
+  const dirtyRoots = new Set();
 
   function getErrorMessage(error) {
     if (!error) return "Unknown error";
     if (typeof error === "string") return error;
     return error && error.message ? String(error.message) : String(error);
-  }
-
-  function normalizeStats(value) {
-    return {
-      conversions:
-        value && Number.isFinite(value.conversions) ? value.conversions : 0,
-    };
   }
 
   function isContextInvalidatedError(error) {
@@ -182,23 +152,6 @@
     }
   }
 
-  async function setSyncStorage(value) {
-    if (extensionContextInvalidated) {
-      return false;
-    }
-
-    try {
-      await chrome.storage.sync.set(value);
-      return true;
-    } catch (error) {
-      if (markContextInvalidated(error)) {
-        return false;
-      }
-
-      throw error;
-    }
-  }
-
   function initializeSecurity() {
     if (window.currencyTranslatorInjected || window.currencyTranslatorProcessed) {
       return false;
@@ -224,55 +177,51 @@
     return true;
   }
 
-  function getNodeOriginalText(node) {
-    return nodeState.get(node)?.originalText ?? null;
+  function observeMutations() {
+    mutationObserver?.observe(document.body, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
   }
 
-  function getNodeProcessedText(node) {
-    return nodeState.get(node)?.processedText ?? null;
-  }
-
-  function markNodeState(node, originalText, processedText) {
-    nodeState.set(node, { originalText, processedText });
-  }
-
-  function clearNodeState(node, clearOriginal) {
-    const state = nodeState.get(node);
-    if (!state) {
-      return;
+  function withoutObserving(callback) {
+    mutationObserver?.disconnect();
+    try {
+      return callback();
+    } finally {
+      if (!extensionContextInvalidated && document.body) {
+        observeMutations();
+      }
     }
-
-    if (clearOriginal) {
-      nodeState.delete(node);
-      return;
-    }
-
-    nodeState.set(node, { originalText: state.originalText, processedText: null });
   }
 
-  function suppressMutationHandlingFor(delayMs = PROCESS_DEBOUNCE_MS * 2) {
-    suppressMutationsUntil = Date.now() + delayMs;
-  }
-
-  function isMutationHandlingSuppressed() {
-    return Date.now() < suppressMutationsUntil;
-  }
-
-  function resetProcessedState({ restoreOriginal = false, clearOriginal = false } = {}) {
+  function resetProcessedState() {
     if (!document.body) {
       return;
     }
 
-    suppressMutationHandlingFor();
+    stateVersion += 1;
+    fullScanPending = true;
+    withoutObserving(() => {
+      walkTextNodes(document.body, (node) => {
+        const state = nodeState.get(node);
+        if (!state) {
+          return;
+        }
 
-    walkTextNodes(document.body, (node) => {
-      const originalText = getNodeOriginalText(node);
-
-      if (restoreOriginal && originalText && node.nodeValue !== originalText) {
-        node.nodeValue = originalText;
-      }
-
-      clearNodeState(node, clearOriginal);
+        if (node.nodeValue === state.processedText) {
+          node.nodeValue = state.originalText;
+        } else if (node.nodeValue.includes(state.processedText)) {
+          node.nodeValue = node.nodeValue.replace(
+            state.processedText,
+            state.originalText
+          );
+        } else if (node.nodeValue.includes("≈")) {
+          return;
+        }
+        nodeState.delete(node);
+      });
     });
   }
 
@@ -284,43 +233,6 @@
         rateCache.delete(key);
       }
     }
-  }
-
-  function initializeCleanup() {
-    setInterval(cleanupCache, CLEANUP_INTERVAL);
-
-    window.addEventListener("beforeunload", () => {
-      cleanupCache();
-    });
-  }
-
-  async function loadStats() {
-    try {
-      const result = await getSyncStorage(["stats"]);
-      if (result.stats) {
-        stats = normalizeStats(result.stats);
-      }
-    } catch (error) {
-      console.warn("Error loading stats:", getErrorMessage(error));
-    }
-  }
-
-  function saveStats() {
-    sendRuntimeMessage({ action: "updateStats", stats }, { expectResponse: false });
-
-    if (statsSaveTimeout || extensionContextInvalidated) {
-      return;
-    }
-
-    statsSaveTimeout = setTimeout(async () => {
-      statsSaveTimeout = null;
-
-      try {
-        await setSyncStorage({ stats });
-      } catch (error) {
-        console.warn("Error saving stats:", getErrorMessage(error));
-      }
-    }, STATS_SAVE_DEBOUNCE_MS);
   }
 
   async function requestExchangeRates(fromCurrencies, toCurrency) {
@@ -358,6 +270,10 @@
       });
 
       if (!response || response.error || !response.rates) {
+        if (Object.keys(rates).length > 0) {
+          console.warn("Exchange-rate warning:", response?.error || "Provider unavailable");
+          return rates;
+        }
         throw new Error(response?.error || "Unable to fetch exchange rates.");
       }
 
@@ -377,26 +293,6 @@
     }
 
     return rates;
-  }
-
-  function detectCurrenciesOnPage() {
-    const textContent = document.body?.innerText || "";
-
-    return Object.entries(CURRENCY_DETECTORS)
-      .filter(([, pattern]) => pattern.test(textContent))
-      .map(([currency]) => currency);
-  }
-
-  async function getExchangeRatesForPage(userCurrency) {
-    const currencies = detectCurrenciesOnPage().filter(
-      (currency) => currency !== userCurrency
-    );
-
-    if (currencies.length === 0) {
-      return {};
-    }
-
-    return requestExchangeRates(currencies, userCurrency);
   }
 
   function getUserCurrencySymbol(currency) {
@@ -436,41 +332,63 @@
       ? amountMatch[2].toUpperCase()
       : "";
 
-    return numericValue * (COMPACT_NUMBER_MULTIPLIERS[compactSuffix] || 1);
+    const amount = numericValue * (COMPACT_NUMBER_MULTIPLIERS[compactSuffix] || 1);
+    return Number.isFinite(amount) ? amount : null;
   }
 
-  function convertCurrencies(text, rates, userCurrency, compactMode) {
-    let convertedText = text;
-    let conversionsFound = 0;
-
+  function findCurrencyMatches(text) {
+    const matches = [];
     for (const [currency, pattern] of Object.entries(CURRENCY_PATTERNS)) {
-      if (!rates[currency] || currency === userCurrency) {
+      for (const match of text.matchAll(pattern)) {
+        if (parseDetectedAmount(match[0]) !== null) {
+          matches.push({ currency, text: match[0], index: match.index });
+        }
+      }
+    }
+
+    matches.sort((left, right) =>
+      left.index - right.index || right.text.length - left.text.length
+    );
+
+    const distinct = [];
+    let previousEnd = 0;
+    for (const match of matches) {
+      if (match.index < previousEnd) {
+        continue;
+      }
+      distinct.push(match);
+      previousEnd = match.index + match.text.length;
+    }
+    return distinct;
+  }
+
+  function convertCurrencies(text, matches, rates, userCurrency, compactMode) {
+    let result = "";
+    let cursor = 0;
+    let count = 0;
+
+    for (const match of matches) {
+      result += text.slice(cursor, match.index);
+      cursor = match.index + match.text.length;
+
+      const rate = rates[match.currency];
+      const amount = parseDetectedAmount(match.text);
+      const converted = amount && rate ? amount * rate : null;
+      if (match.currency === userCurrency || !Number.isFinite(converted)) {
+        result += match.text;
         continue;
       }
 
-      convertedText = convertedText.replace(pattern, (match) => {
-        const numericValue = parseDetectedAmount(match);
-
-        if (!numericValue) {
-          return match;
-        }
-
-        conversionsFound += 1;
-        return formatConversion(
-          match,
-          (numericValue * rates[currency]).toFixed(2),
-          userCurrency,
-          compactMode
-        );
-      });
+      result += formatConversion(
+        match.text,
+        converted.toFixed(2),
+        userCurrency,
+        compactMode
+      );
+      count += 1;
     }
 
-    if (conversionsFound > 0) {
-      stats.conversions += conversionsFound;
-      saveStats();
-    }
-
-    return convertedText;
+    return { text: result + text.slice(cursor), count };
   }
 
   function walkTextNodes(root, visitor) {
@@ -481,12 +399,14 @@
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
         const parent = node.parentElement;
-        if (
-          !parent ||
-          SKIPPED_TAGS.has(parent.tagName) ||
-          parent.isContentEditable
-        ) {
+        if (!parent || parent.isContentEditable) {
           return NodeFilter.FILTER_REJECT;
+        }
+
+        for (let element = parent; element; element = element.parentElement) {
+          if (SKIPPED_TAGS.has(element.tagName)) {
+            return NodeFilter.FILTER_REJECT;
+          }
         }
 
         return NodeFilter.FILTER_ACCEPT;
@@ -499,251 +419,251 @@
     }
   }
 
-  function getBlockAncestor(node) {
-    let element = node.parentElement;
-
-    while (element && element !== document.body) {
-      if (BLOCK_TAGS.has(element.tagName)) {
-        return element;
-      }
-      element = element.parentElement;
+  function getSourceText(node) {
+    const currentText = node.nodeValue || "";
+    if (currentText.trim().length < 2) {
+      return null;
     }
 
-    return document.body;
+    const state = nodeState.get(node);
+    if (!state) {
+      return currentText;
+    }
+    if (currentText === state.processedText) {
+      return null;
+    }
+    if (currentText.includes(state.processedText)) {
+      return currentText.replace(state.processedText, state.originalText);
+    }
+    return currentText.includes("≈") ? null : currentText;
   }
 
-  function collectProcessTargets() {
+  function collectProcessTargets(roots) {
     const targets = [];
     const seen = new Set();
+    const currencies = new Set();
 
-    walkTextNodes(document.body, (node) => {
-      const block = getBlockAncestor(node);
-      if (!block || seen.has(block)) {
-        return;
-      }
+    for (const root of roots) {
+      walkTextNodes(root, (node) => {
+        if (seen.has(node)) {
+          return;
+        }
+        seen.add(node);
 
-      seen.add(block);
-      targets.push(block);
-    });
+        const sourceText = getSourceText(node);
+        if (!sourceText) {
+          return;
+        }
 
-    if (targets.length === 0) {
-      return document.body ? [document.body] : [];
+        const matches = findCurrencyMatches(sourceText);
+        if (matches.length === 0) {
+          return;
+        }
+
+        for (const match of matches) {
+          currencies.add(match.currency);
+        }
+        targets.push({ node, currentText: node.nodeValue, sourceText, matches });
+      });
     }
 
     const viewportHeight = window.innerHeight || 0;
-
-    return targets
-      .sort((left, right) => {
-        const leftRect = left.getBoundingClientRect();
-        const rightRect = right.getBoundingClientRect();
-
-        const leftVisible =
-          leftRect.height > 0 &&
-          leftRect.width > 0 &&
-          leftRect.bottom > 0 &&
-          leftRect.top < viewportHeight;
-        const rightVisible =
-          rightRect.height > 0 &&
-          rightRect.width > 0 &&
-          rightRect.bottom > 0 &&
-          rightRect.top < viewportHeight;
-
-        if (leftVisible !== rightVisible) {
-          return leftVisible ? -1 : 1;
-        }
-
-        const leftDistance = leftVisible
-          ? 0
-          : Math.min(
-              Math.abs(leftRect.top),
-              Math.abs(leftRect.bottom - viewportHeight)
-            );
-        const rightDistance = rightVisible
-          ? 0
-          : Math.min(
-              Math.abs(rightRect.top),
-              Math.abs(rightRect.bottom - viewportHeight)
-            );
-
-        if (leftDistance !== rightDistance) {
-          return leftDistance - rightDistance;
-        }
-
-        return leftRect.top - rightRect.top;
-      })
-      .slice(0, MAX_PROCESS_TARGETS);
-  }
-
-  function prepareTextNode(node, rates, userCurrency, compactMode) {
-    const currentText = node.nodeValue || "";
-    const trimmedText = currentText.trim();
-    if (!trimmedText || trimmedText.length < 2) {
-      return null;
+    for (const target of targets) {
+      const rect = target.node.parentElement.getBoundingClientRect();
+      target.distance = rect.width > 0 && rect.height > 0 &&
+        rect.bottom > 0 && rect.top < viewportHeight
+        ? 0
+        : rect.width === 0 || rect.height === 0
+          ? Number.POSITIVE_INFINITY
+          : Math.min(Math.abs(rect.top), Math.abs(rect.bottom - viewportHeight));
     }
-
-    const storedOriginal = getNodeOriginalText(node);
-    const lastProcessed = getNodeProcessedText(node);
-
-    let originalText = currentText;
-    if (storedOriginal && lastProcessed && currentText === lastProcessed) {
-      return null;
-    }
-
-    if (storedOriginal && lastProcessed && currentText !== lastProcessed) {
-      originalText = currentText;
-    } else if (storedOriginal && !lastProcessed) {
-      originalText = storedOriginal;
-    }
-
-    let processedText = originalText;
-    if (Object.keys(rates).length > 0) {
-      processedText = convertCurrencies(processedText, rates, userCurrency, compactMode);
-    }
-
-    return {
-      node,
-      originalText,
-      finalText: processedText !== originalText ? processedText : originalText,
-    };
-  }
-
-  function processDOM(root, options) {
-    walkTextNodes(root, (node) => {
-      const candidate = prepareTextNode(
-        node,
-        options.rates,
-        options.userCurrency,
-        options.compactMode
-      );
-
-      if (!candidate) {
-        return;
-      }
-
-      if (node.nodeValue !== candidate.finalText) {
-        node.nodeValue = candidate.finalText;
-      }
-
-      markNodeState(node, candidate.originalText, candidate.finalText);
-    });
+    targets.sort((left, right) => left.distance - right.distance);
+    return { targets, currencies: [...currencies] };
   }
 
   async function runCurrencyConversion() {
     if (isProcessing) {
+      pendingProcessing = true;
       return processingQueue;
     }
 
     isProcessing = true;
     processingQueue = (async () => {
-      suppressMutationHandlingFor();
-
       try {
-        sendRuntimeMessage({
-          action: "progress",
-          message: "Loading settings...",
-        }, { expectResponse: false });
+        const version = stateVersion;
+        const roots = fullScanPending
+          ? [document.body]
+          : [...dirtyRoots].filter((root) => root.isConnected);
+        fullScanPending = false;
+        dirtyRoots.clear();
 
-        await loadStats();
-
+        const { targets, currencies } = collectProcessTargets(roots);
+        if (targets.length === 0) {
+          return { ok: true, conversions: 0 };
+        }
         const settings = await getSyncStorage(["currency", "compactMode"]);
-
         const userCurrency = settings.currency || "EUR";
         const compactMode = settings.compactMode === true;
+        const rates = await requestExchangeRates(
+          currencies.filter((currency) => currency !== userCurrency),
+          userCurrency
+        );
 
-        sendRuntimeMessage({
-          action: "progress",
-          message: "Fetching exchange rates...",
-        }, { expectResponse: false });
-
-        const rates = await getExchangeRatesForPage(userCurrency);
-        const targets = collectProcessTargets();
-
-        sendRuntimeMessage({
-          action: "progress",
-          message: "Processing content...",
-        }, { expectResponse: false });
-
-        for (const target of targets) {
-          processDOM(target, {
-            rates,
-            userCurrency,
-            compactMode,
-          });
+        if (version !== stateVersion) {
+          fullScanPending = true;
+          pendingProcessing = true;
+          return { ok: false, error: "Settings changed during processing." };
         }
 
-        sendRuntimeMessage({ action: "done" }, { expectResponse: false });
+        let conversions = 0;
+        let interrupted = false;
+        for (let start = 0; start < targets.length; start += MAX_PROCESS_TARGETS) {
+          if (version !== stateVersion) {
+            fullScanPending = true;
+            pendingProcessing = true;
+            interrupted = true;
+            break;
+          }
+          withoutObserving(() => {
+            for (const target of targets.slice(start, start + MAX_PROCESS_TARGETS)) {
+              if (!target.node.isConnected || target.node.nodeValue !== target.currentText) {
+                continue;
+              }
+              const result = convertCurrencies(
+                target.sourceText,
+                target.matches,
+                rates,
+                userCurrency,
+                compactMode
+              );
+              if (result.count === 0) {
+                continue;
+              }
+              target.node.nodeValue = result.text;
+              nodeState.set(target.node, {
+                originalText: target.sourceText,
+                processedText: result.text,
+              });
+              conversions += result.count;
+            }
+          });
+          if (start + MAX_PROCESS_TARGETS < targets.length) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
+        }
+
+        if (conversions > 0) {
+          sendRuntimeMessage(
+            { action: "incrementStats", count: conversions },
+            { expectResponse: false }
+          );
+        }
+        return interrupted
+          ? { ok: false, error: "Settings changed during processing." }
+          : { ok: true, conversions };
       } catch (error) {
         console.error("Error in runCurrencyConversion:", error);
-        sendRuntimeMessage({
-          action: "error",
-          error: getErrorMessage(error),
-        }, { expectResponse: false });
+        return { ok: false, error: getErrorMessage(error) };
       } finally {
         isProcessing = false;
-        suppressMutationHandlingFor();
+        if (pendingProcessing) {
+          pendingProcessing = false;
+          setTimeout(() => runAutoProcessing(), 0);
+        }
       }
     })();
 
     return processingQueue;
   }
 
-  function debounce(callback, wait) {
-    let timeoutId = null;
-
-    return (...args) => {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-
-      timeoutId = setTimeout(() => {
-        timeoutId = null;
-        callback(...args);
-      }, wait);
-    };
-  }
-
-  const debouncedProcessing = debounce(() => {
-    if (isProcessing || isMutationHandlingSuppressed()) {
-      return;
-    }
-
+  function runAutoProcessing() {
     getSyncStorage(["autoProcess"])
       .then(({ autoProcess }) => {
         if (autoProcess !== false) {
           runCurrencyConversion();
+        } else {
+          dirtyRoots.clear();
+          fullScanPending = true;
         }
       })
       .catch((error) => {
         console.warn("Error reading autoProcess setting:", getErrorMessage(error));
       });
-  }, PROCESS_DEBOUNCE_MS);
+  }
+
+  let processTimeout = null;
+  function scheduleProcessing() {
+    if (processTimeout) {
+      return;
+    }
+    processTimeout = setTimeout(() => {
+      processTimeout = null;
+      runAutoProcessing();
+    }, PROCESS_DELAY_MS);
+  }
 
   function initializeObservers() {
-    mutationObserver = new MutationObserver(debouncedProcessing);
-    mutationObserver.observe(document.body, {
-      childList: true,
-      characterData: true,
-      subtree: true,
+    mutationObserver = new MutationObserver((records) => {
+      if (fullScanPending) {
+        scheduleProcessing();
+        return;
+      }
+      for (const record of records) {
+        if (record.type === "characterData") {
+          dirtyRoots.add(record.target.parentElement);
+        } else {
+          for (const added of record.addedNodes) {
+            dirtyRoots.add(added.nodeType === Node.TEXT_NODE ? added.parentElement : added);
+          }
+        }
+      }
+      dirtyRoots.delete(null);
+      if (dirtyRoots.size > 0) {
+        if (dirtyRoots.size > MAX_DIRTY_ROOTS) {
+          fullScanPending = true;
+          dirtyRoots.clear();
+        }
+        scheduleProcessing();
+      }
     });
+    observeMutations();
   }
 
   chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     switch (request.action) {
       case "reprocess":
-        resetProcessedState({ restoreOriginal: true, clearOriginal: false });
-        cleanupCache();
-        runCurrencyConversion();
-        break;
+        (async () => {
+          await processingQueue;
+          resetProcessedState();
+          cleanupCache();
+          sendResponse(await runCurrencyConversion());
+        })().catch((error) => sendResponse({ ok: false, error: getErrorMessage(error) }));
+        return true;
       case "clearCache":
-        rateCache.clear();
-        resetProcessedState({ restoreOriginal: true, clearOriginal: true });
-        break;
+        (async () => {
+          await processingQueue;
+          rateCache.clear();
+          resetProcessedState();
+          sendResponse({ ok: true });
+        })().catch((error) => sendResponse({ ok: false, error: getErrorMessage(error) }));
+        return true;
       default:
         return false;
     }
+  });
 
-    sendResponse({ ok: true });
-    return false;
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "sync") {
+      return;
+    }
+
+    if (changes.currency || changes.compactMode) {
+      resetProcessedState();
+      runAutoProcessing();
+    } else if (changes.autoProcess?.newValue === true) {
+      fullScanPending = true;
+      runAutoProcessing();
+    }
   });
 
   window.addEventListener("error", (event) => {
@@ -766,8 +686,6 @@
     return;
   }
 
-  initializeCleanup();
-
   const initialRun = () => {
     if (!document.body) {
       return;
@@ -775,15 +693,7 @@
 
     initializeObservers();
 
-    getSyncStorage(["autoProcess"])
-      .then(({ autoProcess }) => {
-        if (autoProcess !== false) {
-          runCurrencyConversion();
-        }
-      })
-      .catch((error) => {
-        console.warn("Error reading autoProcess setting:", getErrorMessage(error));
-      });
+    runAutoProcessing();
   };
 
   if (document.readyState === "loading") {

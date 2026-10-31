@@ -1,3 +1,5 @@
+> Historical PR draft. See [README.md](../README.md) for current extension behavior.
+
 ## PR Title
 
 `feat(extension): fix compact salary parsing and prepare public read-only release`
@@ -71,7 +73,6 @@ The extension was converting compact salary values incorrectly because it parsed
 
 - Removing `all_frames` is safer and narrower, but pages that only expose prices inside embedded frames will now be left unchanged.
 - Compact suffix support currently covers `K`, `M`, and `B`; other shorthand styles still degrade by leaving the original text intact.
-- Manual Chrome QA is still required before merge because the extension flow cannot be fully validated from local file preview alone.
 
 ## Backward Compatibility
 

@@ -38,11 +38,12 @@ If you want to keep the repository public, forkable, and curated:
 
 ## Features
 
-- Converts detected prices for `USD`, `EUR`, `GBP`, `JPY`, `CNY`, and `KRW`, including compact notation such as `¥7.2M`, full-width yen (`￥`), and Chinese yuan suffixes such as `99 元`
+- Converts detected prices for `USD`, `EUR`, `GBP`, `JPY`, `CNY`, and `KRW`, including compact notation such as `¥7.2M`, full-width yen (`￥`), and Chinese yuan formats such as `CN¥100` and `99 元`
 - Uses a 10-minute in-memory cache, persisted in `chrome.storage.local` after successful rate fetches
-- Processes pages automatically or on demand from the popup
-- Keeps each unmatched amount unchanged when parsing, messaging, or rate fetching fails
-- Tracks conversion counts in `chrome.storage.sync`
+- Processes matching text nodes in batches, then watches added or edited page regions
+- Leaves unsupported or ambiguous amounts unchanged instead of converting part of a number
+- Preserves page edits when they replace text previously converted by the extension
+- Tracks completed conversions in `chrome.storage.sync`; the service worker serializes updates from multiple tabs
 
 ## Privacy
 
@@ -82,7 +83,7 @@ If you want to keep the repository public, forkable, and curated:
 1. Open the popup and choose your preferred currency.
 2. Visit a page with visible prices.
 3. Let the extension process automatically, or click `Process`.
-4. Use `Clear Cache` to drop cached rates and restore original text in the active page.
+4. Use `Clear Cache` to drop cached rates and restore converted text in the active page when it still matches the extension's output.
 
 Example:
 
@@ -91,11 +92,15 @@ Original: ¥1,500 for a coffee
 Processed: ¥1,500 (≈ €9.27) for a coffee
 ```
 
+The converted amount above is illustrative; it changes with the fetched rate.
+
+The parser accepts decimal points and comma or space thousands groups, for example `$1,234.56` and `¥7.2M`. It leaves formats such as `€1.234,56` and `$1,23` unchanged because their separators are ambiguous. A bare `¥` is treated as JPY; use `CN¥`, `CNY`, or `RMB` to identify CNY. Prices split across separate DOM text nodes are outside the current detection scope.
+
 ## External APIs
 
 The service worker retrieves rates from `https://api.frankfurter.dev/v1`.
 
-If the provider cannot return a valid rate, the extension leaves the original page text unchanged and shows the error after a manual process request.
+If no valid rate is available for a detected currency, that amount remains unchanged. A manual `Process` request reports a failure when no requested rates can be obtained.
 
 ## Development
 
@@ -125,8 +130,9 @@ Reload the unpacked extension in Chrome and verify:
 2. `Process` works on the active tab.
 3. Currency conversion still works on a static page with prices.
 4. Currency conversion still works on a dynamic page.
-5. No obvious duplicate rewrites or processing loops appear.
-6. No errors appear in the page console or service-worker console.
+5. Ambiguous formats remain unchanged, while `CN¥7.2M` converts only once.
+6. No obvious duplicate rewrites or processing loops appear.
+7. No errors appear in the page console or service-worker console.
 
 ## Chrome Extension References
 
