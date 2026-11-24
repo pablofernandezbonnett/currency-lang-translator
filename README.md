@@ -39,7 +39,7 @@ If you want to keep the repository public, forkable, and curated:
 ## Features
 
 - Converts detected prices for `USD`, `EUR`, `GBP`, `JPY`, `CNY`, and `KRW`, including compact notation such as `¥7.2M`, full-width yen (`￥`), and Chinese yuan formats such as `CN¥100` and `99 元`
-- Uses a 10-minute in-memory cache, persisted in `chrome.storage.local` after successful rate fetches
+- Keeps exchange rates in the service worker's 10-minute cache, with snapshots in `chrome.storage.local`
 - Processes matching text nodes in batches, then watches added or edited page regions
 - Leaves unsupported or ambiguous amounts unchanged instead of converting part of a number
 - Preserves page edits when they replace text previously converted by the extension
@@ -94,7 +94,7 @@ Processed: ¥1,500 (≈ €9.27) for a coffee
 
 The converted amount above is illustrative; it changes with the fetched rate.
 
-The parser accepts decimal points and comma or space thousands groups, for example `$1,234.56` and `¥7.2M`. It leaves formats such as `€1.234,56` and `$1,23` unchanged because their separators are ambiguous. A bare `¥` is treated as JPY; use `CN¥`, `CNY`, or `RMB` to identify CNY. Prices split across separate DOM text nodes are outside the current detection scope.
+The parser accepts decimal points and comma or space thousands groups, for example `$1,234.56` and `¥7.2M`. It leaves formats such as `€1.234,56`, `$1,23`, and `1.234,56 元` unchanged because their separators are ambiguous. A bare `¥` is treated as JPY; use `CN¥`, `CNY`, or `RMB` to identify CNY. Prices split across separate DOM text nodes are outside the current detection scope.
 
 ## External APIs
 
