@@ -28,7 +28,7 @@ Do not assume missing tooling. Before proposing Vite, E2E tests, or large refact
 ## Repo map
 
 - [manifest.json](manifest.json): permissions, hosts, popup, content script, and service worker
-- [content.js](content.js): text/currency detection, observers, in-memory cache, and DOM mutation
+- [content.js](content.js): text/currency detection, observers, and DOM mutation
 - [background.js](background.js): exchange-rate fetches, persisted cache, serialized statistics, and cross-context messaging
 - [popup.html](popup.html): popup UI
 - [popup.js](popup.js): settings read/write, manual actions, and feedback

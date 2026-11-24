@@ -1,5 +1,4 @@
 (async () => {
-  const CACHE_DURATION = 10 * 60 * 1000;
   const PROCESS_DELAY_MS = 1000;
   const MAX_PROCESS_TARGETS = 200;
   const MAX_DIRTY_ROOTS = 200;
@@ -7,6 +6,8 @@
     "(?:[0-9]{1,3}(?:[,\\s][0-9]{3})+|[0-9]+)(?:\\.[0-9]{1,2})?";
   const AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT =
     `${NUMBER_PATTERN_FRAGMENT}(?:[KMB])?(?![\\w.,]|\\s+[0-9])`;
+  const TRAILING_CURRENCY_AMOUNT_PATTERN_FRAGMENT =
+    `(?<![\\w.,])${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}`;
   const DETECTED_AMOUNT_PATTERN = new RegExp(
     `(${NUMBER_PATTERN_FRAGMENT})([KMB])?(?![\\w.,]|\\s+[0-9])`,
     "i"
@@ -19,11 +20,11 @@
 
   const CURRENCY_PATTERNS = {
     CNY: new RegExp(
-      `(?:CNY\\s*¥?\\s*|RMB\\s*¥?\\s*|CN[¥￥]\\s*|人民币\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}|${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}\\s*(?:人民币|元)`,
+      `(?:CNY\\s*¥?\\s*|RMB\\s*¥?\\s*|CN[¥￥]\\s*|人民币\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}|${TRAILING_CURRENCY_AMOUNT_PATTERN_FRAGMENT}\\s*(?:人民币|元)`,
       "gi"
     ),
     JPY: new RegExp(
-      `(?:(?<!CN)¥|￥|JPY\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}|${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}\\s*円`,
+      `(?:(?<!CN)¥|￥|JPY\\s*)${AMOUNT_WITH_SUFFIX_PATTERN_FRAGMENT}|${TRAILING_CURRENCY_AMOUNT_PATTERN_FRAGMENT}\\s*円`,
       "gi"
     ),
     USD: new RegExp(
@@ -68,7 +69,6 @@
   let stateVersion = 0;
   let extensionContextInvalidated = false;
 
-  const rateCache = new Map();
   const nodeState = new WeakMap();
   const dirtyRoots = new Set();
 
@@ -225,39 +225,19 @@
     });
   }
 
-  function cleanupCache() {
-    const now = Date.now();
-
-    for (const [key, value] of rateCache.entries()) {
-      if (now - value.timestamp > CACHE_DURATION) {
-        rateCache.delete(key);
-      }
-    }
-  }
-
   async function requestExchangeRates(fromCurrencies, toCurrency) {
     if (!Array.isArray(fromCurrencies) || fromCurrencies.length === 0) {
       return {};
     }
 
     const rates = {};
-    const currenciesToFetch = [];
-
-    for (const currency of fromCurrencies) {
+    const currenciesToFetch = fromCurrencies.filter((currency) => {
       if (currency === toCurrency) {
         rates[currency] = 1;
-        continue;
+        return false;
       }
-
-      const cacheKey = `${currency}_${toCurrency}`;
-      const cached = rateCache.get(cacheKey);
-
-      if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-        rates[currency] = cached.rate;
-      } else {
-        currenciesToFetch.push(currency);
-      }
-    }
+      return true;
+    });
 
     if (currenciesToFetch.length === 0) {
       return rates;
@@ -277,13 +257,7 @@
         throw new Error(response?.error || "Unable to fetch exchange rates.");
       }
 
-      for (const [currency, rate] of Object.entries(response.rates)) {
-        rateCache.set(`${currency}_${toCurrency}`, {
-          rate,
-          timestamp: Date.now(),
-        });
-        rates[currency] = rate;
-      }
+      Object.assign(rates, response.rates);
 
       if (response.warning) {
         console.warn("Exchange-rate warning:", response.warning);
@@ -340,6 +314,12 @@
     const matches = [];
     for (const [currency, pattern] of Object.entries(CURRENCY_PATTERNS)) {
       for (const match of text.matchAll(pattern)) {
+        if (
+          /^[0-9]/.test(match[0]) &&
+          /[0-9]\s*$/.test(text.slice(0, match.index))
+        ) {
+          continue;
+        }
         if (parseDetectedAmount(match[0]) !== null) {
           matches.push({ currency, text: match[0], index: match.index });
         }
@@ -467,17 +447,6 @@
       });
     }
 
-    const viewportHeight = window.innerHeight || 0;
-    for (const target of targets) {
-      const rect = target.node.parentElement.getBoundingClientRect();
-      target.distance = rect.width > 0 && rect.height > 0 &&
-        rect.bottom > 0 && rect.top < viewportHeight
-        ? 0
-        : rect.width === 0 || rect.height === 0
-          ? Number.POSITIVE_INFINITY
-          : Math.min(Math.abs(rect.top), Math.abs(rect.bottom - viewportHeight));
-    }
-    targets.sort((left, right) => left.distance - right.distance);
     return { targets, currencies: [...currencies] };
   }
 
@@ -635,14 +604,12 @@
         (async () => {
           await processingQueue;
           resetProcessedState();
-          cleanupCache();
           sendResponse(await runCurrencyConversion());
         })().catch((error) => sendResponse({ ok: false, error: getErrorMessage(error) }));
         return true;
       case "clearCache":
         (async () => {
           await processingQueue;
-          rateCache.clear();
           resetProcessedState();
           sendResponse({ ok: true });
         })().catch((error) => sendResponse({ ok: false, error: getErrorMessage(error) }));
